@@ -762,7 +762,7 @@ async function loadWifiAssessment(forceScan = false){
         const res = await fetch("data/wifi_demo.json", {cache: "no-store"});
         if (res.ok) data = await res.json();
       } catch (e) {}
-      if (!data) data = getStaticWifiDemoData();
+      if (!data || !data.networks_in_range || data.networks_in_range.length === 0) data = getStaticWifiDemoData();
       state.wifiAssessment = data;
       renderWifiDashboard(data);
       $("wifi-last-scan").textContent = "Interactive Demo (GitHub Pages) — " + new Date().toLocaleTimeString();
@@ -790,6 +790,10 @@ async function loadWifiAssessment(forceScan = false){
 
   function renderWifiDashboard(data){
   if (!data) return;
+  // If networks_in_range is missing or empty, ensure fallback demo data is applied
+  if (!data.networks_in_range || data.networks_in_range.length === 0){
+    data = getStaticWifiDemoData();
+  }
   const iface = data.interface;
 
   // 1. Hero Card
