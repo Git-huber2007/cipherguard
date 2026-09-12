@@ -13,3 +13,5 @@ docs/index.html
 docs/css/
 docs/js/
 docs/.nojekyll
+
+*.jsonl
