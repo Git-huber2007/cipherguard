@@ -273,6 +273,40 @@
       </div>
     </section>
 
+    <!-- RF Spectrum & Channel Congestion Visualizer -->
+    <section class="panel" id="wifi-spectrum-panel" style="margin-top:18px">
+      <div class="spectrum-panel-header">
+        <div>
+          <h2>RF Spectrum &amp; Channel Congestion Visualizer <span class="domain-tag obs">Passive 802.11 Spectral Density</span></h2>
+          <div class="sub">Dynamic channel allocation, non-overlapping boundary analysis (802.11b/g/n/ac/ax), and automated co-channel interference (CCI) advisory.</div>
+        </div>
+        <div class="spectrum-band-toggle">
+          <button id="btn-spectrum-24" class="spectrum-band-btn active" type="button">2.4 GHz ISM Band</button>
+          <button id="btn-spectrum-5" class="spectrum-band-btn" type="button">5 GHz UNII Band</button>
+        </div>
+      </div>
+
+      <!-- Advisory Summary Cards -->
+      <div class="spectrum-advisory-grid" id="wifi-spectrum-advisory">
+        <!-- Injected dynamically via JS -->
+      </div>
+
+      <!-- SVG Spectrum Canvas Wrap -->
+      <div class="spectrum-chart-container">
+        <div class="spectrum-svg-wrap">
+          <svg id="wifi-spectrum-svg" class="spectrum-svg" viewBox="0 0 920 280" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="spectrum-tooltip" class="spectrum-tooltip" style="display:none"></div>
+        </div>
+        <div class="spectrum-legend">
+          <span><i class="spec-swatch spec-curr"></i> Associated / Target AP</span>
+          <span><i class="spec-swatch spec-rogue"></i> Rogue / Evil Twin AP</span>
+          <span><i class="spec-swatch spec-safe"></i> Secure Neighbor AP</span>
+          <span><i class="spec-swatch spec-legacy"></i> Legacy / Weak (WEP/WPA1)</span>
+          <span><i class="spec-swatch spec-nonoverlap"></i> Non-overlapping Best Channels (1, 6, 11)</span>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- ==================== VIEW 2: IPSEC VPN PROTOCOL ANALYZER ==================== -->
@@ -348,6 +382,43 @@
         <div class="sub" id="pqsub">Links ranked by what an adversary recording traffic today could read later.</div>
         <div id="mosca"></div>
         <div id="pqlinks"><div class="empty">No links assessed yet.</div></div>
+      </section>
+
+      <!-- MITRE ATT&CK & NIST SP 800-77 Compliance Matrix Panel -->
+      <section class="panel compliance-panel" id="ipsec-compliance-panel" style="margin-bottom:18px">
+        <div class="compliance-header">
+          <div>
+            <h2>Regulatory &amp; Threat Intelligence Compliance Matrix <span class="domain-tag obs">NIST SP 800-77 &bull; MITRE ATT&amp;CK</span></h2>
+            <div class="sub">Cross-framework verification mapping observed IKE/ESP crypto suites and Wi-Fi postures against federal standards and adversary techniques.</div>
+          </div>
+          <div class="compliance-filter-bar">
+            <button class="compliance-filter-btn active" data-filter="all" type="button">All Frameworks</button>
+            <button class="compliance-filter-btn" data-filter="nist" type="button">NIST SP 800-77 Rev. 1</button>
+            <button class="compliance-filter-btn" data-filter="mitre" type="button">MITRE ATT&amp;CK</button>
+            <button class="compliance-filter-btn" data-filter="cnsa" type="button">NSA CNSA 2.0</button>
+          </div>
+        </div>
+
+        <div class="compliance-stats-row" id="compliance-stats-row">
+          <!-- Injected via JS -->
+        </div>
+
+        <div class="table-wrap" style="margin-top:14px">
+          <table class="compliance-matrix-table" id="compliance-matrix-table">
+            <thead>
+              <tr>
+                <th style="width:15%">Framework / Ref</th>
+                <th style="width:20%">Control / Technique</th>
+                <th style="width:11%">Status</th>
+                <th style="width:27%">Observed Telemetry &amp; Impact</th>
+                <th style="width:27%">Required Hardening / Defense</th>
+              </tr>
+            </thead>
+            <tbody id="compliance-matrix-tbody">
+              <tr><td colspan="5" class="empty">Run an assessment to generate compliance findings.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section class="panel remediation-panel">

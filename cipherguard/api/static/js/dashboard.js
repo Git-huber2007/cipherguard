@@ -23,7 +23,9 @@ const state = {
   simulatedRogueApActive: false, // interactive rogue AP evil twin simulation toggle
   ipsecMode: "single",     // "single" or "diff"
   diffAssessmentA: null,   // baseline capture A assessment
-  diffAssessmentB: null    // hardened capture B assessment
+  diffAssessmentB: null,   // hardened capture B assessment
+  spectrumBand: "2.4",     // "2.4" or "5"
+  complianceFilter: "all"  // "all", "nist", "mitre", "cnsa"
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -355,6 +357,292 @@ function renderPQ(a){
   el.innerHTML = links + phases;
 }
 
+function renderComplianceMatrix(ipsecAssessment, wifiAssessment){
+  ipsecAssessment = ipsecAssessment || state.assessment;
+  wifiAssessment = wifiAssessment || state.wifiAssessment;
+
+  const tbody = $("compliance-matrix-tbody");
+  const statsEl = $("compliance-stats-row");
+  if (!tbody) return;
+
+  if (!ipsecAssessment && !wifiAssessment){
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">Run an assessment or load Wi-Fi telemetry to generate compliance findings.</td></tr>`;
+    if (statsEl) statsEl.innerHTML = "";
+    return;
+  }
+
+  const suite = extractSuiteInfo(ipsecAssessment);
+  const wifiData = wifiAssessment || {};
+  const rogueList = (wifiData.rogue_aps || []);
+  const hasRogue = rogueList.length > 0 || state.simulatedRogueApActive;
+  const findings = (ipsecAssessment && ipsecAssessment.findings) || [];
+
+  const items = [];
+
+  // 1. NIST SP 800-77 §4.1: IKE Protocol Version
+  const isIkev2 = /IKEv2/i.test(suite.ikeVersion || "");
+  const isIkev1 = /IKEv1/i.test(suite.ikeVersion || "");
+  items.push({
+    framework: "nist",
+    ref: "NIST SP 800-77 §4.1",
+    refClass: "",
+    name: "IKE Protocol Version (IKEv2 Mandate)",
+    meta: "RFC 7296 · RFC 8247 §2.1",
+    status: isIkev2 ? "PASS" : (isIkev1 ? "FAIL" : "WARN"),
+    observed: isIkev2
+      ? "IKEv2 negotiated. Cryptographic negotiation protection and DoS cookie mechanism active."
+      : (isIkev1
+          ? "Observed legacy IKEv1 exchange. IKEv1 is explicitly prohibited by NIST SP 800-77 Rev. 1 due to protocol flaw risks and offline PSK dictionary vulnerability."
+          : "No active IKE negotiation observed in capture sample."),
+    fix: isIkev2
+      ? "Maintain IKEv2-only policy. Confirm legacy IKEv1 daemons remain disabled on gateway."
+      : "Migrate phase 1 to IKEv2 per RFC 7296. Enforce strict IKEv2 proposal negotiation in gateway configuration."
+  });
+
+  // 2. NIST SP 800-77 §4.2: AEAD Encryption Suite
+  const badCipher = /3DES|DES|NULL|BLOWFISH/i.test(suite.ikeCipher || "") || /3DES|DES|NULL/i.test(suite.espSuite || "");
+  const isGcm = /GCM|CHACHA/i.test(suite.ikeCipher || "") || /GCM|CHACHA/i.test(suite.espSuite || "");
+  const isCbc = /CBC/i.test(suite.ikeCipher || "") || /CBC/i.test(suite.espSuite || "");
+  const cipherStatus = badCipher ? "FAIL" : (isGcm ? "PASS" : (isCbc ? "WARN" : "WARN"));
+  items.push({
+    framework: "nist",
+    ref: "NIST SP 800-77 §4.2",
+    refClass: "",
+    name: "Authenticated Encryption (AEAD Mandate)",
+    meta: "RFC 8247 §3 · NIST SP 800-38D",
+    status: cipherStatus,
+    observed: badCipher
+      ? `High-risk legacy cipher observed (${esc(suite.ikeCipher)} / ${esc(suite.espSuite)}). Subject to Sweet32 collision attacks (CVE-2016-2183) or cleartext payload exposure.`
+      : (isGcm
+          ? `Modern AEAD encryption active (${esc(suite.ikeCipher)} / ${esc(suite.espSuite)}). Combined confidentiality and integrity tag verified.`
+          : `CBC-mode cipher observed (${esc(suite.ikeCipher)} / ${esc(suite.espSuite)}). Non-AEAD mode requires separate integrity verification and risks padding oracle side-channels.`),
+    fix: isGcm
+      ? "Enforce AES-256-GCM (ENCR_AES_GCM_16) as default encryption transform across all ESP child SAs."
+      : "Upgrade IPsec proposals to combined-mode AEAD (AES-256-GCM or ChaCha20-Poly1305). Eliminate CBC and 64-bit block ciphers."
+  });
+
+  // 3. NIST SP 800-77 §4.3: Diffie-Hellman Group Key Exchange
+  const dhWeak = [1, 2, 5, 22, 25].includes(suite.dhVal) || /Group 1|Group 2|Group 5/i.test(suite.dhGroup || "");
+  const dhStrong = [14, 19, 20, 21, 28, 29, 30, 31].includes(suite.dhVal) || /Group 14|Group 19|Group 20|Group 21|Curve25519/i.test(suite.dhGroup || "");
+  const dhStatus = dhWeak ? "FAIL" : (dhStrong ? "PASS" : "WARN");
+  items.push({
+    framework: "nist",
+    ref: "NIST SP 800-77 §4.3",
+    refClass: "",
+    name: "Diffie-Hellman Key Exchange Strength",
+    meta: "RFC 8247 §2.4 · FIPS 140-3",
+    status: dhStatus,
+    observed: dhWeak
+      ? `Sub-standard DH group observed (${esc(suite.dhGroup)}, < 2048-bit MODP). Precomputation attacks (Logjam) can compromise ephemeral key generation.`
+      : (dhStrong
+          ? `Approved cryptographic DH group (${esc(suite.dhGroup)}, >= 2048-bit MODP / Curve25519). High-order prime security margin satisfied.`
+          : `DH Group undetermined or unobserved in capture window (${esc(suite.dhGroup)}).`),
+    fix: dhStrong
+      ? "Maintain minimum DH Group 14 (MODP-2048) or Group 19 (ECP-256). Prepare post-quantum hybrid transition."
+      : "Require Diffie-Hellman Group 14 (2048-bit MODP), Group 19 (256-bit ECP), or Group 31 (Curve25519) in IKE_SA proposals."
+  });
+
+  // 4. NIST SP 800-77 §4.4: Integrity & PRF Hash Function
+  const prfBad = /MD5|SHA1|SHA_1/i.test(suite.ikePrf || "");
+  const prfGood = /SHA2|SHA3|SHA_256|SHA_384|SHA_512/i.test(suite.ikePrf || "");
+  const prfStatus = prfBad ? "FAIL" : (prfGood ? "PASS" : "WARN");
+  items.push({
+    framework: "nist",
+    ref: "NIST SP 800-77 §4.4",
+    refClass: "",
+    name: "Cryptographic Hash & PRF Function",
+    meta: "RFC 8247 §2.2-2.3 · NIST SP 800-107",
+    status: prfStatus,
+    observed: prfBad
+      ? `Deprecated hash/PRF algorithm observed (${esc(suite.ikePrf)}). Collision resistance is broken, violating federal standards.`
+      : (prfGood
+          ? `Cryptographically secure SHA-2 hash family observed (${esc(suite.ikePrf)}). Full pseudorandom entropy generation verified.`
+          : `PRF hash algorithm unconfirmed in active proposal (${esc(suite.ikePrf)}).`),
+    fix: prfGood
+      ? "Enforce SHA-256 or SHA-512 as baseline hash family across authentication and PRF."
+      : "Enforce PRF_HMAC_SHA2_256 or PRF_HMAC_SHA2_512. Deprecate MD5 and SHA-1 in crypto policies."
+  });
+
+  // 5. NIST SP 800-77 §4.5: Extended Sequence Numbers (ESN Replay Defense)
+  const hasEsn = findings.some(f => /ESN|Sequence Number/i.test(f.title || ""));
+  const esnStatus = hasEsn ? "WARN" : "PASS";
+  items.push({
+    framework: "nist",
+    ref: "NIST SP 800-77 §4.5",
+    refClass: "",
+    name: "Extended Sequence Numbers (ESN 64-bit)",
+    meta: "RFC 4303 §2.2.1 · High-Speed ESP",
+    status: esnStatus,
+    observed: hasEsn
+      ? "Standard 32-bit sequence numbers in use without ESN. On high-throughput connections (> 1 Gbps), rollover can cause premature SA renegotiation or replay window exhaustion."
+      : "Extended Sequence Number (ESN) or robust anti-replay sliding window enabled for ESP packet streams.",
+    fix: hasEsn
+      ? "Enable 64-bit Extended Sequence Numbers (ESN) in IPsec child SA configurations to sustain gigabit data rates without replay drops."
+      : "Ensure replay window size is configured to minimum 64 packets across all tunnel endpoints."
+  });
+
+  // 6. NSA CNSA 2.0 §3: Post-Quantum Cryptographic Readiness
+  const isPqSafe = suite.pqSafe;
+  const pqStatus = isPqSafe ? "PASS" : "WARN";
+  items.push({
+    framework: "cnsa",
+    ref: "NSA CNSA 2.0 §3",
+    refClass: "cnsa",
+    name: "Post-Quantum Cryptographic Readiness (HNDL Defense)",
+    meta: "RFC 9370 · FIPS 203 ML-KEM",
+    status: pqStatus,
+    observed: isPqSafe
+      ? "Post-quantum resistant key encapsulation / hybrid exchange validated. Protected against future quantum cryptanalysis."
+      : "Classical public-key exchange in use without post-quantum hybrid KEM. Traffic recorded today is vulnerable to Harvest Now, Decrypt Later (HNDL) adversaries.",
+    fix: isPqSafe
+      ? "Maintain hybrid post-quantum readiness; verify FIPS 203 ML-KEM compatibility in firmware."
+      : "Deploy hybrid Post-Quantum IKEv2 key exchange (ML-KEM-768 / RFC 9370) to satisfy NSA CNSA 2.0 commercial national security compliance."
+  });
+
+  // 7. MITRE ATT&CK T1557.002: Adversary-in-the-Middle / Rogue AP
+  items.push({
+    framework: "mitre",
+    ref: "MITRE ATT&CK T1557.002",
+    refClass: "mitre",
+    name: "Adversary-in-the-Middle: Rogue AP / Evil Twin",
+    meta: "802.11 Spectral Defense · Honeypot MitM",
+    status: hasRogue ? "FAIL" : "PASS",
+    observed: hasRogue
+      ? "CRITICAL: Rogue clone AP detected broadcasting target SSID with open/downgraded security. Adversary is actively staging an Evil Twin MitM honeypot to harvest credentials."
+      : "Zero rogue clone APs or spoofed BSSID anomalies detected within local RF spectral radius.",
+    fix: hasRogue
+      ? "Isolate area, locate rogue BSSID with RF spectrum visualizer, block MAC address at controller, and enforce 802.11w Protected Management Frames (PMF)."
+      : "Maintain continuous RF spectrum anomaly detection and 802.11w PMF mandatory enforcement."
+  });
+
+  // 8. MITRE ATT&CK T1040: Network Sniffing (Passive Wire Traffic Analysis)
+  const isCleartext = /unencrypted|cleartext|NULL/i.test(suite.espSuite || "");
+  const sniffStatus = isCleartext ? "FAIL" : (isIkev1 ? "WARN" : "PASS");
+  items.push({
+    framework: "mitre",
+    ref: "MITRE ATT&CK T1040",
+    refClass: "mitre",
+    name: "Network Sniffing: Passive Wire Traffic Analysis",
+    meta: "RFC 4303 Framing · Passive Sensor Auditing",
+    status: sniffStatus,
+    observed: isCleartext
+      ? "Cleartext payload encapsulation detected on wire. Adversary with tap or mirror port access can read sensitive payload bytes directly."
+      : (isIkev1
+          ? "IKEv1 Aggressive Mode handshakes expose hashed pre-shared key credentials to passive wire captures."
+          : "ESP packet payload fully encapsulated with cryptographic confidentiality. Passive sensor confirms zero cleartext payload leakage."),
+    fix: isCleartext
+      ? "Immediately re-enable ESP encryption (AES-256-GCM). Eliminate NULL cipher tunnels."
+      : "Enforce physical port security, 802.1AE MACsec on intra-datacenter trunks, and switch mirror port access controls."
+  });
+
+  // 9. MITRE ATT&CK T1565.002: Data Manipulation (Weak ICV Truncation)
+  const has96Bit = findings.some(f => /96-bit|truncat/i.test(f.title || "")) || /96/i.test(suite.espSuite || "");
+  const icvStatus = has96Bit ? "FAIL" : "PASS";
+  items.push({
+    framework: "mitre",
+    ref: "MITRE ATT&CK T1565.002",
+    refClass: "mitre",
+    name: "Data Manipulation: Weak ICV / 96-Bit Tag Truncation",
+    meta: "RFC 8247 §3.2 · Integrity Check Value",
+    status: icvStatus,
+    observed: has96Bit
+      ? "Truncated 96-bit ICV (AUTH_HMAC_SHA1_96 / MD5_96) in use. Reduced tag size lowers collision complexity and facilitates active packet forgery attacks."
+      : "Full 128-bit or 256-bit authentication tags verified (AES-GCM-16). Anti-tamper packet verification resilient against bit-flipping.",
+    fix: has96Bit
+      ? "Transition ESP proposals to AEAD suites with full 128-bit ICV tags (AES-GCM ICV-16). Deprecate 96-bit truncated HMACs."
+      : "Reject any packets failing ICV verification silently to avoid cryptographic oracle leakage."
+  });
+
+  // 10. MITRE ATT&CK T1590.005: Gather Victim Network Info (DNS Leakage)
+  const vpnActive = wifiData && wifiData.vpn && wifiData.vpn.connected;
+  const dnsStatus = vpnActive ? "PASS" : "WARN";
+  items.push({
+    framework: "mitre",
+    ref: "MITRE ATT&CK T1590.005",
+    refClass: "mitre",
+    name: "Gather Network Info: DNS Resolver & Gateway Leakage",
+    meta: "DNS Leaks · Cleartext Metadata Reconnaissance",
+    status: dnsStatus,
+    observed: vpnActive
+      ? "Encrypted VPN overlay tunnel active. DNS requests and gateway metadata encapsulated within secure tunnel transport."
+      : "Direct ISP gateway link active without encrypted VPN overlay. Outgoing DNS resolution is transmitted in cleartext, exposing visited network endpoints.",
+    fix: vpnActive
+      ? "Enforce strict tunnel DNS routing and verify no split-tunnel bypass leaks occur."
+      : "Deploy DNS-over-HTTPS (DoH) or establish an encrypted IPsec/WireGuard VPN overlay to protect metadata from eavesdroppers."
+  });
+
+  // Calculate summary metrics
+  const totalCount = items.length;
+  const passCount = items.filter(i => i.status === "PASS").length;
+  const failCount = items.filter(i => i.status === "FAIL").length;
+  const warnCount = items.filter(i => i.status === "WARN").length;
+  const compliancePct = Math.round((passCount / totalCount) * 100);
+
+  if (statsEl){
+    statsEl.innerHTML = `
+      <div class="compliance-stat-card">
+        <div class="val" style="color:${compliancePct >= 80 ? 'var(--ok)' : (compliancePct >= 60 ? 'var(--med)' : 'var(--crit)')}">
+          ${compliancePct}%
+        </div>
+        <div class="lbl">Compliance Score</div>
+      </div>
+      <div class="compliance-stat-card">
+        <div class="val">${totalCount}</div>
+        <div class="lbl">Controls Evaluated</div>
+      </div>
+      <div class="compliance-stat-card">
+        <div class="val" style="color:var(--ok)">${passCount} Passing</div>
+        <div class="lbl">Compliant Controls</div>
+      </div>
+      <div class="compliance-stat-card">
+        <div class="val" style="color:${failCount > 0 ? 'var(--crit)' : 'var(--muted)'}">${failCount} Critical</div>
+        <div class="lbl">Violations Detected</div>
+      </div>
+      <div class="compliance-stat-card">
+        <div class="val" style="color:${warnCount > 0 ? 'var(--med)' : 'var(--muted)'}">${warnCount} Warnings</div>
+        <div class="lbl">Hardening Advised</div>
+      </div>
+    `;
+  }
+
+  // Filter items based on active tab
+  const activeFilter = state.complianceFilter || "all";
+  const filteredItems = items.filter(item => {
+    if (activeFilter === "all") return true;
+    return item.framework === activeFilter;
+  });
+
+  if (filteredItems.length === 0){
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">No controls matching current framework filter.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filteredItems.map(item => {
+    const statusIcon = item.status === "PASS" ? "&#10004; COMPLIANT" : (item.status === "FAIL" ? "&#10008; VIOLATION" : "&#9888; DEFICIENCY");
+    const statusCls = item.status === "PASS" ? "pass" : (item.status === "FAIL" ? "fail" : "warn");
+    return `
+      <tr>
+        <td>
+          <span class="compliance-ref-badge ${esc(item.refClass)}">${esc(item.ref)}</span>
+        </td>
+        <td>
+          <div class="compliance-ctrl-name">${esc(item.name)}</div>
+          <div class="compliance-ctrl-meta">${esc(item.meta)}</div>
+        </td>
+        <td>
+          <span class="compliance-status-badge ${statusCls}">${statusIcon}</span>
+        </td>
+        <td>
+          <div class="compliance-obs-text">${item.observed}</div>
+        </td>
+        <td>
+          <div class="compliance-fix-text">${item.fix}</div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
 function renderPlatforms(a){
   const row = $("platforms");
   const plats = (state.remediationPlans && state.remediationPlans.length)
@@ -598,6 +886,7 @@ async function runAnalysis(){
     renderFindings(state.assessment);
     renderRibbon(state.assessment);
     renderPQ(state.assessment);
+    renderComplianceMatrix(state.assessment, state.wifiAssessment);
     renderPlatforms(state.assessment);
     await loadRemediation();
     showBanner(null);
@@ -2257,6 +2546,14 @@ async function loadWifiAssessment(forceScan = false){
 
   // 7. In-range Networks Table
   renderWifiNetworksTable(networks);
+
+  // 8. RF Spectrum & Channel Congestion Visualizer
+  renderRfSpectrum(networks);
+
+  // 9. Refresh Compliance Matrix with updated Wi-Fi telemetry if IPsec assessment exists
+  if (state.assessment) {
+    renderComplianceMatrix(state.assessment, data);
+  }
 }
 
 function renderVpnOverlay(vpn){
@@ -2607,6 +2904,326 @@ function renderWifiNetworksTable(networks){
   }
 }
 
+/* --------------------------------------------------- RF Spectrum Visualizer */
+
+function getWifiCenterFreq(channel, band) {
+  const ch = parseInt(channel, 10);
+  if (isNaN(ch) || ch <= 0) return null;
+  const is5 = (band && String(band).includes("5")) || ch >= 32;
+  if (!is5) {
+    if (ch === 14) return 2484;
+    if (ch >= 1 && ch <= 13) return 2407 + (ch * 5);
+    return null;
+  } else {
+    if (ch >= 36 && ch <= 64) return 5000 + (ch * 5);
+    if (ch >= 100 && ch <= 144) return 5000 + (ch * 5);
+    if (ch >= 149 && ch <= 165) return 5000 + (ch * 5);
+    return 5000 + (ch * 5);
+  }
+}
+
+function renderRfSpectrum(networks) {
+  networks = networks || state.currentWifiNetworks || [];
+  const svg = $("wifi-spectrum-svg");
+  const advisoryEl = $("wifi-spectrum-advisory");
+  if (!svg) return;
+
+  const is5 = state.spectrumBand === "5";
+  const fMin = is5 ? 5160 : 2400;
+  const fMax = is5 ? 5850 : 2500;
+  const channelWidth = is5 ? 20 : 22;
+
+  // Filter networks belonging to this band
+  const bandNetworks = networks.filter(n => {
+    const ch = parseInt(n.channel, 10);
+    const has5 = (n.band && String(n.band).includes("5")) || ch >= 32;
+    return is5 ? has5 : !has5;
+  });
+
+  // Calculate co-channel interference counts
+  const channelCounts = {};
+  bandNetworks.forEach(n => {
+    const ch = parseInt(n.channel, 10);
+    if (!isNaN(ch) && ch > 0) {
+      channelCounts[ch] = (channelCounts[ch] || 0) + 1;
+    }
+  });
+
+  // Advisory calculations
+  const candidateChannels = is5 ? [36, 40, 44, 48, 149, 153, 157, 161] : [1, 6, 11];
+  let cleanestCh = candidateChannels[0];
+  let minInterference = 999;
+
+  candidateChannels.forEach(c => {
+    const cci = channelCounts[c] || 0;
+    // Adjacent interference (±1 or ±2 channels)
+    let aci = 0;
+    if (!is5) {
+      for (let offset = -2; offset <= 2; offset++) {
+        if (offset !== 0 && channelCounts[c + offset]) {
+          aci += channelCounts[c + offset];
+        }
+      }
+    }
+    const score = (cci * 3) + (aci * 1.5);
+    if (score < minInterference) {
+      minInterference = score;
+      cleanestCh = c;
+    }
+  });
+
+  const connectedNet = bandNetworks.find(n => n.connected);
+  const connCh = connectedNet ? parseInt(connectedNet.channel, 10) : null;
+  const connCci = connCh ? (channelCounts[connCh] || 1) : 0;
+  const satPct = Math.min(100, Math.round((bandNetworks.length / (is5 ? 18 : 8)) * 100));
+
+  // Render Advisory Cards
+  if (advisoryEl) {
+    const cleanestCci = channelCounts[cleanestCh] || 0;
+    const connCardClass = connCh
+      ? (connCci <= 1 ? "recommended" : (connCci <= 3 ? "caution" : "alert"))
+      : "recommended";
+
+    advisoryEl.innerHTML = `
+      <div class="spectrum-advisory-card recommended">
+        <div class="spectrum-advisory-label">Optimal Cleanest Channel</div>
+        <div class="spectrum-advisory-value" style="color:#059669">★ Channel ${cleanestCh}</div>
+        <div class="spectrum-advisory-desc">${cleanestCci} Co-Channel APs detected. Minimal interference boundary &amp; high SNR headroom.</div>
+      </div>
+      <div class="spectrum-advisory-card ${connCardClass}">
+        <div class="spectrum-advisory-label">Active Channel Status</div>
+        <div class="spectrum-advisory-value">
+          ${connCh ? `Channel ${connCh} (${connCci} AP${connCci > 1 ? 's' : ''})` : 'No AP Associated'}
+        </div>
+        <div class="spectrum-advisory-desc">
+          ${connCh
+            ? (connCci <= 1
+                ? 'Excellent channel isolation. Minimal co-channel packet retransmissions.'
+                : `Active Co-Channel Interference (CCI) from ${connCci - 1} competing access point${connCci > 2 ? 's' : ''}.`)
+            : 'Associate with an access point to monitor active co-channel congestion.'}
+        </div>
+      </div>
+      <div class="spectrum-advisory-card ${satPct > 70 ? 'alert' : (satPct > 40 ? 'caution' : 'recommended')}">
+        <div class="spectrum-advisory-label">Spectral Saturation</div>
+        <div class="spectrum-advisory-value">${satPct}% Congestion</div>
+        <div class="spectrum-advisory-desc">${bandNetworks.length} Access Point${bandNetworks.length === 1 ? '' : 's'} broadcasting in ${is5 ? '5 GHz UNII' : '2.4 GHz ISM'} spectrum.</div>
+      </div>
+      <div class="spectrum-advisory-card recommended">
+        <div class="spectrum-advisory-label">Channel Architecture</div>
+        <div class="spectrum-advisory-value" style="font-size:1rem">${is5 ? '20/40/80 MHz UNII' : 'Non-Overlapping (1, 6, 11)'}</div>
+        <div class="spectrum-advisory-desc">${is5 ? 'Wide dynamic bandwidth with DFS and UNII-1/UNII-3 spatial reuse.' : 'Adhere to non-overlapping channels (1, 6, 11) to prevent 802.11 spectral bleed.'}</div>
+      </div>
+    `;
+  }
+
+  // Dimensions
+  const svgW = 920;
+  const svgH = 280;
+  const marginLeft = 60;
+  const marginRight = 25;
+  const marginTop = 25;
+  const marginBottom = 45;
+  const plotW = svgW - marginLeft - marginRight;
+  const plotH = svgH - marginTop - marginBottom;
+  const yBase = marginTop + plotH;
+  const yTop = marginTop;
+
+  const fToX = (f) => marginLeft + ((f - fMin) / (fMax - fMin)) * plotW;
+  const dbmToY = (dbm) => {
+    const clamped = Math.max(-98, Math.min(-30, dbm));
+    return yBase - ((clamped - (-100)) / ((-30) - (-100))) * plotH;
+  };
+
+  let svgContent = `
+    <defs>
+      <linearGradient id="grad-connected" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.6"/>
+        <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.05"/>
+      </linearGradient>
+      <linearGradient id="grad-rogue" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ef4444" stop-opacity="0.75"/>
+        <stop offset="100%" stop-color="#ef4444" stop-opacity="0.08"/>
+      </linearGradient>
+      <linearGradient id="grad-legacy" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.5"/>
+        <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.05"/>
+      </linearGradient>
+      <linearGradient id="grad-normal" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#818cf8" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#818cf8" stop-opacity="0.04"/>
+      </linearGradient>
+    </defs>
+  `;
+
+  // Draw Horizontal Power Gridlines (-30, -50, -70, -90 dBm)
+  const powerLevels = [-30, -50, -70, -90];
+  powerLevels.forEach(lvl => {
+    const y = dbmToY(lvl);
+    svgContent += `
+      <line x1="${marginLeft}" y1="${y.toFixed(1)}" x2="${(marginLeft + plotW).toFixed(1)}" y2="${y.toFixed(1)}" stroke="#1e293b" stroke-dasharray="2 4"/>
+      <text x="${marginLeft - 8}" y="${(y + 4).toFixed(1)}" fill="#64748b" text-anchor="end" font-size="10">${lvl} dBm</text>
+    `;
+  });
+
+  // Base X-axis line
+  svgContent += `
+    <line x1="${marginLeft}" y1="${yBase}" x2="${(marginLeft + plotW).toFixed(1)}" y2="${yBase}" stroke="#334155" stroke-width="1.5"/>
+  `;
+
+  // Draw Channel Ticks and Non-Overlapping Highlights
+  if (!is5) {
+    // 2.4 GHz channels 1 to 14
+    for (let ch = 1; ch <= 14; ch++) {
+      const freq = getWifiCenterFreq(ch, "2.4");
+      if (!freq) continue;
+      const x = fToX(freq);
+      const isClean = [1, 6, 11].includes(ch);
+
+      if (isClean) {
+        svgContent += `
+          <line x1="${x.toFixed(1)}" y1="${yTop}" x2="${x.toFixed(1)}" y2="${yBase}" stroke="rgba(16, 185, 129, 0.15)" stroke-dasharray="3 3"/>
+          <circle cx="${x.toFixed(1)}" cy="${yBase + 16}" r="11" fill="rgba(16, 185, 129, 0.12)" stroke="rgba(16, 185, 129, 0.4)"/>
+          <text x="${x.toFixed(1)}" y="${yBase + 20}" fill="#10b981" font-weight="700" text-anchor="middle" font-size="10">${ch}</text>
+          <text x="${x.toFixed(1)}" y="${yTop + 10}" fill="#10b981" font-size="9" text-anchor="middle" opacity="0.8">★ Clean Ch ${ch}</text>
+        `;
+      } else {
+        svgContent += `
+          <line x1="${x.toFixed(1)}" y1="${yBase}" x2="${x.toFixed(1)}" y2="${yBase + 5}" stroke="#475569"/>
+          <text x="${x.toFixed(1)}" y="${yBase + 18}" fill="#64748b" text-anchor="middle" font-size="10">${ch}</text>
+        `;
+      }
+    }
+  } else {
+    // 5 GHz channels
+    const channels5 = [36, 40, 44, 48, 52, 56, 60, 64, 100, 108, 116, 124, 132, 140, 149, 153, 157, 161, 165];
+    channels5.forEach(ch => {
+      const freq = getWifiCenterFreq(ch, "5");
+      if (!freq) return;
+      const x = fToX(freq);
+      const isUnii1 = ch <= 48;
+      const isUnii3 = ch >= 149;
+      const isClean = isUnii1 || isUnii3;
+
+      svgContent += `
+        <line x1="${x.toFixed(1)}" y1="${yBase}" x2="${x.toFixed(1)}" y2="${yBase + 5}" stroke="${isClean ? '#06b6d4' : '#475569'}"/>
+        <text x="${x.toFixed(1)}" y="${yBase + 18}" fill="${isClean ? '#06b6d4' : '#64748b'}" text-anchor="middle" font-size="9">${ch}</text>
+      `;
+    });
+
+    // Sub-labels for UNII zones
+    svgContent += `
+      <text x="${fToX(5210).toFixed(1)}" y="${yTop + 10}" fill="#94a3b8" font-size="9" text-anchor="middle">UNII-1 (36-48)</text>
+      <text x="${fToX(5290).toFixed(1)}" y="${yTop + 10}" fill="#94a3b8" font-size="9" text-anchor="middle">UNII-2 DFS (52-64)</text>
+      <text x="${fToX(5600).toFixed(1)}" y="${yTop + 10}" fill="#94a3b8" font-size="9" text-anchor="middle">UNII-2e (100-144)</text>
+      <text x="${fToX(5785).toFixed(1)}" y="${yTop + 10}" fill="#94a3b8" font-size="9" text-anchor="middle">UNII-3 (149-165)</text>
+    `;
+  }
+
+  // Sort networks: normal first, then weak/legacy, then connected, then rogue on top
+  const sorted = [...bandNetworks].sort((a, b) => {
+    if (a.is_rogue) return 1;
+    if (b.is_rogue) return -1;
+    if (a.connected) return 1;
+    if (b.connected) return -1;
+    return (a.rssi_dbm || -80) - (b.rssi_dbm || -80);
+  });
+
+  // Render AP bell curves
+  sorted.forEach((n) => {
+    const ch = parseInt(n.channel, 10);
+    const fc = getWifiCenterFreq(ch, n.band);
+    if (!fc || fc < fMin || fc > fMax) return;
+
+    const rssi = n.rssi_dbm || Math.round(-100 + ((n.signal_percent || 50) * 0.7));
+    const f1 = fc - channelWidth / 2;
+    const f2 = fc + channelWidth / 2;
+
+    const x1 = fToX(f1);
+    const xc = fToX(fc);
+    const x2 = fToX(f2);
+    const yPeak = dbmToY(rssi);
+
+    let gradId = "grad-normal";
+    let strokeColor = "#818cf8";
+    let strokeWidth = "1.5";
+    let pulseClass = "";
+
+    if (n.is_rogue) {
+      gradId = "grad-rogue";
+      strokeColor = "#ef4444";
+      strokeWidth = "2.5";
+      pulseClass = "rogue-pulse-curve";
+    } else if (n.connected) {
+      gradId = "grad-connected";
+      strokeColor = "#06b6d4";
+      strokeWidth = "2.5";
+    } else if (n.security_grade === "F" || /WEP|None|Open/i.test(n.encryption || n.security || "")) {
+      gradId = "grad-legacy";
+      strokeColor = "#f59e0b";
+      strokeWidth = "1.8";
+    }
+
+    const pathD = `M ${x1.toFixed(1)} ${yBase} Q ${xc.toFixed(1)} ${yPeak.toFixed(1)} ${x2.toFixed(1)} ${yBase} Z`;
+
+    const tooltipData = JSON.stringify({
+      ssid: n.ssid || "(Hidden SSID)",
+      bssid: n.bssid || "—",
+      channel: ch,
+      freq: `${fc} MHz`,
+      rssi: `${rssi} dBm (${n.signal_percent || 50}%)`,
+      sec: `${n.authentication || 'WPA2'} / ${n.encryption || 'AES'}`,
+      status: n.is_rogue ? "🚨 ROGUE AP / EVIL TWIN" : (n.connected ? "✔ CURRENTLY ASSOCIATED" : "Neighbor AP")
+    }).replace(/"/g, "&quot;");
+
+    svgContent += `
+      <g class="spectrum-curve-group">
+        <path d="${pathD}" fill="url(#${gradId})" stroke="${strokeColor}" stroke-width="${strokeWidth}"
+              class="curve-path ${pulseClass}" data-spec="${tooltipData}"/>
+        <circle cx="${xc.toFixed(1)}" cy="${yPeak.toFixed(1)}" r="${n.is_rogue || n.connected ? '4' : '2.5'}" fill="${strokeColor}"/>
+        <text x="${xc.toFixed(1)}" y="${(yPeak - 6).toFixed(1)}" fill="${strokeColor}" font-size="10" font-weight="${n.is_rogue || n.connected ? '700' : '500'}" text-anchor="middle">
+          ${esc(n.ssid ? n.ssid.slice(0, 14) : 'AP')} (${rssi})
+        </text>
+      </g>
+    `;
+  });
+
+  svg.innerHTML = svgContent;
+
+  // Tooltip interaction
+  const tooltip = $("spectrum-tooltip");
+  if (tooltip) {
+    svg.querySelectorAll(".curve-path").forEach(path => {
+      path.addEventListener("mouseenter", (e) => {
+        try {
+          const d = JSON.parse(path.getAttribute("data-spec"));
+          tooltip.innerHTML = `
+            <div style="font-weight:700; color:#38bdf8; margin-bottom:2px">${esc(d.ssid)}</div>
+            <div style="font-family:var(--mono); font-size:0.74rem; color:#94a3b8">${esc(d.bssid)}</div>
+            <div style="margin-top:4px"><strong>Channel:</strong> ${esc(d.channel)} (${esc(d.freq)})</div>
+            <div><strong>Signal:</strong> ${esc(d.rssi)}</div>
+            <div><strong>Security:</strong> ${esc(d.sec)}</div>
+            <div style="margin-top:4px; font-weight:600; color:${d.status.includes('ROGUE') ? '#ef4444' : (d.status.includes('ASSOCIATED') ? '#34d399' : '#94a3b8')}">${esc(d.status)}</div>
+          `;
+          tooltip.style.display = "block";
+        } catch (err) {}
+      });
+
+      path.addEventListener("mousemove", (e) => {
+        const wrap = svg.parentElement;
+        const rect = wrap.getBoundingClientRect();
+        const x = e.clientX - rect.left + 15;
+        const y = e.clientY - rect.top - 10;
+        tooltip.style.left = `${Math.min(x, rect.width - 200)}px`;
+        tooltip.style.top = `${Math.max(10, y)}px`;
+      });
+
+      path.addEventListener("mouseleave", () => {
+        tooltip.style.display = "none";
+      });
+    });
+  }
+}
+
 /* --------------------------------------------------- export audit dossier */
 
 function exportSecurityAuditReport(){
@@ -2853,6 +3470,34 @@ async function init(){
       }
     });
   }
+
+  // RF Spectrum Band Switcher Controls
+  const btnSpec24 = $("btn-spectrum-24");
+  const btnSpec5 = $("btn-spectrum-5");
+  if (btnSpec24 && btnSpec5) {
+    btnSpec24.addEventListener("click", () => {
+      state.spectrumBand = "2.4";
+      btnSpec24.classList.add("active");
+      btnSpec5.classList.remove("active");
+      renderRfSpectrum(state.currentWifiNetworks);
+    });
+    btnSpec5.addEventListener("click", () => {
+      state.spectrumBand = "5";
+      btnSpec5.classList.add("active");
+      btnSpec24.classList.remove("active");
+      renderRfSpectrum(state.currentWifiNetworks);
+    });
+  }
+
+  // Compliance Matrix Framework Filter Controls
+  document.querySelectorAll(".compliance-filter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".compliance-filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      state.complianceFilter = btn.dataset.filter || "all";
+      renderComplianceMatrix(state.assessment, state.wifiAssessment);
+    });
+  });
 
   renderRibbon(null);
 

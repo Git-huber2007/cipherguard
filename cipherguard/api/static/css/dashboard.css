@@ -1647,3 +1647,373 @@ footer{margin-top:34px;font-size:.79rem;color:var(--faint);max-width:74ch}
   margin-top: 2px;
 }
 
+/* ==========================================================================
+   RF Spectrum & Channel Congestion Visualizer
+   ========================================================================== */
+
+.spectrum-panel-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.spectrum-band-toggle{
+  display: inline-flex;
+  background: var(--paper);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+  gap: 3px;
+}
+
+.spectrum-band-btn{
+  background: transparent;
+  border: none;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.spectrum-band-btn:hover{
+  color: var(--ink);
+}
+
+.spectrum-band-btn.active{
+  background: var(--surface);
+  color: var(--observed);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.spectrum-advisory-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin: 14px 0 16px 0;
+}
+
+.spectrum-advisory-card{
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spectrum-advisory-card.recommended{
+  border-left: 4px solid #10b981;
+  background: rgba(236, 253, 245, 0.7);
+}
+
+.spectrum-advisory-card.caution{
+  border-left: 4px solid #f59e0b;
+  background: rgba(254, 243, 199, 0.6);
+}
+
+.spectrum-advisory-card.alert{
+  border-left: 4px solid #ef4444;
+  background: rgba(254, 242, 242, 0.7);
+}
+
+.spectrum-advisory-label{
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.spectrum-advisory-value{
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.spectrum-advisory-desc{
+  font-size: 0.78rem;
+  color: var(--dim);
+  line-height: 1.35;
+}
+
+.spectrum-chart-container{
+  background: #090e17;
+  border-radius: 8px;
+  border: 1px solid #1e293b;
+  padding: 14px 16px 12px 16px;
+  position: relative;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.spectrum-svg-wrap{
+  position: relative;
+  width: 100%;
+}
+
+.spectrum-svg{
+  width: 100%;
+  height: auto;
+  display: block;
+  font-family: var(--mono);
+}
+
+.spectrum-svg text{
+  user-select: none;
+}
+
+.spectrum-tooltip{
+  position: absolute;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid #334155;
+  color: #f1f5f9;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  pointer-events: none;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+
+.spectrum-legend{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #1e293b;
+  font-size: 0.76rem;
+  color: #94a3b8;
+}
+
+.spec-swatch{
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+
+.spec-curr{ background: #06b6d4; }
+.spec-rogue{ background: #ef4444; }
+.spec-safe{ background: #818cf8; }
+.spec-legacy{ background: #f59e0b; }
+.spec-nonoverlap{ background: #10b981; }
+
+/* SVG Curve Glow Effects */
+.curve-path{
+  transition: opacity 0.2s ease, stroke-width 0.2s ease;
+  cursor: pointer;
+}
+.curve-path:hover{
+  stroke-width: 2.5px;
+  opacity: 1 !important;
+}
+
+.rogue-pulse-curve{
+  animation: rogueGlowPulse 1.8s infinite alternate ease-in-out;
+}
+
+@keyframes rogueGlowPulse{
+  0%{ stroke-opacity: 0.6; filter: drop-shadow(0 0 2px rgba(239,68,68,0.4)); }
+  100%{ stroke-opacity: 1; filter: drop-shadow(0 0 10px rgba(239,68,68,0.9)); }
+}
+
+/* ==========================================================================
+   MITRE ATT&CK & NIST SP 800-77 Compliance Matrix
+   ========================================================================== */
+
+.compliance-panel{
+  position: relative;
+}
+
+.compliance-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.compliance-filter-bar{
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compliance-filter-btn{
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  padding: 4px 12px;
+  font-family: var(--sans);
+  font-size: 0.76rem;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.compliance-filter-btn:hover{
+  border-color: var(--observed);
+  color: var(--ink);
+}
+
+.compliance-filter-btn.active{
+  background: var(--observed);
+  color: #fff;
+  border-color: var(--observed);
+  font-weight: 600;
+}
+
+.compliance-stats-row{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.compliance-stat-card{
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.compliance-stat-card .val{
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.compliance-stat-card .lbl{
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.compliance-matrix-table{
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.compliance-matrix-table th{
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sunk);
+  text-align: left;
+}
+
+.compliance-matrix-table td{
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.82rem;
+  vertical-align: top;
+}
+
+.compliance-matrix-table tr:hover td{
+  background: rgba(27, 110, 140, 0.02);
+}
+
+.compliance-ref-badge{
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--observed-bg);
+  color: var(--observed);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.compliance-ref-badge.cnsa{
+  background: var(--inferred-bg);
+  color: var(--inferred);
+}
+
+.compliance-ref-badge.mitre{
+  background: rgba(192, 86, 33, 0.12);
+  color: #c05621;
+}
+
+.compliance-status-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.compliance-status-badge.pass{
+  background: rgba(16, 185, 129, 0.14);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.compliance-status-badge.fail{
+  background: rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.compliance-status-badge.warn{
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.compliance-ctrl-name{
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.compliance-ctrl-meta{
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+.compliance-obs-text{
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.compliance-fix-text{
+  color: #065f46;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  background: rgba(236, 253, 245, 0.6);
+  padding: 6px 8px;
+  border-radius: 4px;
+  border-left: 3px solid #10b981;
+}
+
+
