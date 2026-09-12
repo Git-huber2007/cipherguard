@@ -171,7 +171,10 @@ def create_app(
     try:
         if not allow_upload:
             raise ImportError("uploads disabled by configuration")
-        import multipart  # noqa: F401
+        try:
+            import python_multipart  # noqa: F401
+        except ImportError:
+            import multipart  # noqa: F401
 
         @app.post("/api/upload", dependencies=guard)
         async def upload(file: UploadFile = File(...)) -> dict:

@@ -1872,7 +1872,7 @@ def test_static_export_carries_real_analysis(tmp_path):
     out = tmp_path / "site"
     manifest = export(capture_dir=str(caps), out_dir=str(out),
                       model_dir="models", verbose=False)
-    payload = _json.loads((out / manifest["captures"][0]["file"]).read_text())
+    payload = _json.loads((out / manifest["captures"][0]["file"]).read_text(encoding="utf-8"))
 
     live = pipeline.analyze(path, model_dir="models")
     assert payload["score"] == live.score()

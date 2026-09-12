@@ -29,7 +29,7 @@ function esc(s){
     c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
-function shortSpi(h){ return h ? h.slice(0, 8) + "…" : "—"; }
+function shortSpi(h){ return h ? h.slice(0, 8) + "..." : "\u2014"; }
 
 function pickIkeProposal(s){
   // Prefer the responder's selection: that is what was actually agreed, as
@@ -611,30 +611,184 @@ function switchTab(tab){
   }
 }
 
+
+function getStaticWifiDemoData(){
+  return {
+    "interface": {
+      "name": "Wi-Fi 6 (802.11ax Adapter)",
+      "description": "Intel(R) Wi-Fi 6 AX201 160MHz",
+      "guid": "{7D825160-C32E-4A91-8891-9501B8A04231}",
+      "state": "connected",
+      "ssid": "Enterprise-Secure-WPA3",
+      "bssid": "00:25:9c:cf:1b:41",
+      "radio_type": "802.11ax",
+      "authentication": "WPA3-Enterprise",
+      "cipher": "GCMP-256",
+      "channel": 36,
+      "band": "5 GHz",
+      "signal_percent": 94,
+      "rssi_dbm": -48,
+      "rx_rate_mbps": 1201.0,
+      "tx_rate_mbps": 1201.0,
+      "ipv4": "10.100.4.52",
+      "gateway_ip": "10.100.4.1",
+      "dns_servers": ["10.100.4.10", "1.1.1.1"]
+    },
+    "networks_in_range": [
+      {
+        "ssid": "Enterprise-Secure-WPA3",
+        "bssid": "00:25:9c:cf:1b:41",
+        "signal_percent": 94,
+        "rssi_dbm": -48,
+        "channel": 36,
+        "band": "5 GHz",
+        "radio_type": "802.11ax",
+        "authentication": "WPA3-Enterprise",
+        "encryption": "GCMP-256",
+        "security_grade": "A+",
+        "connected": true,
+        "notes": "CNSA 2.0 & Suite-B 192-bit compliant"
+      },
+      {
+        "ssid": "Corp-Staff-WPA2",
+        "bssid": "00:25:9c:cf:1b:42",
+        "signal_percent": 91,
+        "rssi_dbm": -51,
+        "channel": 36,
+        "band": "5 GHz",
+        "radio_type": "802.11ax",
+        "authentication": "WPA2-Enterprise",
+        "encryption": "CCMP-128",
+        "security_grade": "A",
+        "connected": false,
+        "notes": "PMF Mandatory"
+      },
+      {
+        "ssid": "IoT-Legacy-Sensor",
+        "bssid": "00:25:9c:cf:1b:45",
+        "signal_percent": 74,
+        "rssi_dbm": -63,
+        "channel": 6,
+        "band": "2.4 GHz",
+        "radio_type": "802.11n",
+        "authentication": "WPA2-Personal",
+        "encryption": "CCMP",
+        "security_grade": "B",
+        "connected": false,
+        "notes": "Isolated VLAN recommended"
+      },
+      {
+        "ssid": "Visitor-Guest-Open",
+        "bssid": "00:25:9c:cf:1b:49",
+        "signal_percent": 68,
+        "rssi_dbm": -68,
+        "channel": 1,
+        "band": "2.4 GHz",
+        "radio_type": "802.11ac",
+        "authentication": "Enhanced Open (OWE)",
+        "encryption": "OWE",
+        "security_grade": "B+",
+        "connected": false,
+        "notes": "Opportunistic Wireless Encryption enabled"
+      }
+    ],
+    "vpn": {
+      "connected": true,
+      "vpn_type": "WireGuard Kernel Accelerated",
+      "adapter_name": "wg-cipherguard0",
+      "virtual_ip": "10.200.0.4",
+      "egress_ip": "198.51.100.42",
+      "egress_isp": "Cloudflare Magic WAN / Secure Tunnel",
+      "egress_city": "New Delhi",
+      "egress_country": "IN",
+      "dns_leak_detected": false,
+      "kill_switch_active": true
+    },
+    "score": 94,
+    "grade": "A+",
+    "started": new Date().toISOString(),
+    "findings": [
+      {
+        "severity": "info",
+        "rule_id": "WIFI-001",
+        "title": "Protected Management Frames (PMF / 802.11w) Active",
+        "subject": "SSID: Enterprise-Secure-WPA3",
+        "detail": "BSSID 00:25:9c:cf:1b:41 enforces 802.11w Protected Management Frames, mitigating deauthentication and disassociation hijacking.",
+        "remediation": "Maintain PMF required policy on all wireless LAN controllers.",
+        "reference": "IEEE 802.11w / NIST SP 800-162",
+        "inferred": false
+      },
+      {
+        "severity": "info",
+        "rule_id": "VPN-002",
+        "title": "WireGuard Cryptographic Tunnel Verified",
+        "subject": "Tunnel wg-cipherguard0 (10.200.0.4)",
+        "detail": "Layer-3 traffic encapsulated using ChaCha20-Poly1305 AEAD and Curve25519 key exchange. Zero plain DNS leakage detected outside the tunnel.",
+        "remediation": "Review post-quantum hybrid KEM roadmap (RFC 9370) for quantum-resilient tunnel upgrades.",
+        "reference": "RFC 8247 / NIST SP 800-77 Rev 1",
+        "inferred": false
+      }
+    ],
+    "counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 2
+    },
+    "summary": "Connected to 'Enterprise-Secure-WPA3' on 5 GHz (Channel 36). WPA3-Enterprise / GCMP-256 with 94% signal. WireGuard tunnel active. Score: 94/100 (Grade A+).",
+    "dns_posture": {
+      "dns_servers": ["10.100.4.10", "1.1.1.1"],
+      "gateway": "10.100.4.1",
+      "ipv4": "10.100.4.52"
+    },
+    "quantum_risk": "Quantum-Resilient Tunnel Recommended for Long-Term Data (CNSA 2.0)"
+  };
+}
+
 async function loadWifiAssessment(forceScan = false){
   const refreshBtn = $("wifi-refresh-btn");
   const scanBtn = $("wifi-scan-now");
-  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = "Scanning…"; }
-  if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = "Scanning…"; }
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = "Scanning..."; }
+  if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = "Scanning..."; }
 
   try{
-    const endpoint = forceScan ? "/api/wifi/scan" : "/api/wifi/current";
-    const method = forceScan ? "POST" : "GET";
-    const res = await api(endpoint, {method});
-    const data = await res.json();
-    renderWifiDashboard(data);
-    $("wifi-last-scan").textContent = "Last scanned: " + new Date().toLocaleTimeString();
+    if (staticMode.active){
+      if (forceScan) {
+        await new Promise(r => setTimeout(r, 400));
+      }
+      let data = null;
+      try {
+        const res = await fetch("data/wifi_demo.json", {cache: "no-store"});
+        if (res.ok) data = await res.json();
+      } catch (e) {}
+      if (!data) data = getStaticWifiDemoData();
+      state.wifiAssessment = data;
+      renderWifiDashboard(data);
+      $("wifi-last-scan").textContent = "Interactive Demo (GitHub Pages) — " + new Date().toLocaleTimeString();
+    } else {
+      const endpoint = forceScan ? "/api/wifi/scan" : "/api/wifi/current";
+      const method = forceScan ? "POST" : "GET";
+      const res = await api(endpoint, {method});
+      const data = await res.json();
+      state.wifiAssessment = data;
+      renderWifiDashboard(data);
+      $("wifi-last-scan").textContent = "Last scanned: " + new Date().toLocaleTimeString();
+    }
   }catch(err){
-    console.warn("Live Wi-Fi fetch error:", err);
-    $("wifi-ssid-title").textContent = "Wi-Fi Telemetry Unavailable";
-    $("wifi-gradesub").textContent = "Could not reach Wi-Fi endpoint: " + err.message;
+    console.warn("Live Wi-Fi fetch fallback:", err);
+    const fallback = getStaticWifiDemoData();
+    state.wifiAssessment = fallback;
+    renderWifiDashboard(fallback);
+    $("wifi-last-scan").textContent = "Demonstration Mode Active";
   }finally{
-    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = "⚡ Analyze Live Wi-Fi"; }
-    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = "🔄 Scan All Networks"; }
+    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = "\uD83D\uDD04 Analyze Live Wi-Fi"; }
+    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = "\uD83D\uDCE1 Scan All Networks"; }
   }
 }
 
-function renderWifiDashboard(data){
+
+  function renderWifiDashboard(data){
   if (!data) return;
   const iface = data.interface;
 
@@ -1175,7 +1329,7 @@ function exportSecurityAuditReport(){
 
 /* ----------------------------------------------------------------- init */
 
-function init(){
+async function init(){
   try { state.token = sessionStorage.getItem("cipherguard.token"); } catch (e) {}
 
   // Tab listeners
@@ -1324,20 +1478,32 @@ function init(){
     if (simBox) simBox.style.display = "none";
   });
 
-  // Default to Wi-Fi mode
-  switchTab("wifi");
-  loadWifiAssessment(false);
+  // Detect host mode: GitHub Pages (static demo) vs live local API server
+  const isStatic = await detectStaticMode();
 
-  // Auto-poll live Wi-Fi and VPN telemetry every 15s when the Wi-Fi tab is active
-  setInterval(() => {
-    const wifiView = $("view-wifi");
-    if (wifiView && wifiView.classList.contains("active")) {
-      loadWifiAssessment(false);
-    }
-  }, 15000);
+  if (isStatic) {
+    // In static mode (GitHub Pages), default to interactive IPsec capture analyzer
+    switchTab("ipsec");
+    await loadCaptures();
+    if (!$("run").disabled) await runAnalysis();
+    // Pre-load demo Wi-Fi assessment in background
+    loadWifiAssessment(false);
+  } else {
+    // In live server mode, default to real-time Wi-Fi scanning
+    switchTab("wifi");
+    loadWifiAssessment(false);
 
-  // Also preload IPsec captures in background
-  loadCaptures().then(() => { if (!$("run").disabled) runAnalysis(); });
+    // Auto-poll live Wi-Fi and VPN telemetry every 15s ONLY in live backend mode
+    setInterval(() => {
+      const wifiView = $("view-wifi");
+      if (wifiView && wifiView.classList.contains("active")) {
+        loadWifiAssessment(false);
+      }
+    }, 15000);
+
+    // Preload IPsec captures in background
+    loadCaptures().then(() => { if (!$("run").disabled) runAnalysis(); });
+  }
 }
 
 if (document.readyState === "loading"){

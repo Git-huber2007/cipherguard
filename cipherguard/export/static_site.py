@@ -108,6 +108,26 @@ def export(
     with open(os.path.join(data_dir, "manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
 
+    # Pre-generate Wi-Fi & VPN posture for static demo deployment
+    try:
+        from ..wifi.auditor import WifiAuditor
+        from ..vpn.detector import VpnDetector
+        auditor = WifiAuditor()
+        wifi_data = auditor.audit_current().to_dict()
+        try:
+            vpn_det = VpnDetector()
+            w_name = wifi_data.get("interface", {}).get("name", "Wi-Fi") if wifi_data.get("interface") else "Wi-Fi"
+            w_dns = wifi_data.get("interface", {}).get("dns_servers", []) if wifi_data.get("interface") else []
+            vpn_res = vpn_det.detect_current(wifi_iface_name=w_name, wifi_dns=w_dns)
+            wifi_data["vpn"] = vpn_res.to_dict()
+        except Exception:
+            wifi_data["vpn"] = None
+        with open(os.path.join(data_dir, "wifi_demo.json"), "w", encoding="utf-8") as fh:
+            json.dump(wifi_data, fh, indent=2)
+    except Exception as exc:
+        if verbose:
+            print(f"  Note: wifi demo export ({exc})")
+
     # Tell GitHub Pages not to run the output through Jekyll, which would
     # otherwise ignore any file or directory beginning with an underscore.
     open(os.path.join(out_dir, ".nojekyll"), "w").close()
