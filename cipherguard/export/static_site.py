@@ -1,201 +1,5 @@
 from __future__ import annotations
 
-def _get_default_demo_wifi() -> dict:
-    return {
-        "interface": {
-            "name": "Wi-Fi 6 (802.11ax Adapter)",
-            "description": "Intel(R) Wi-Fi 6 AX201 160MHz",
-            "guid": "{7D825160-C32E-4A91-8891-9501B8A04231}",
-            "state": "connected",
-            "ssid": "Enterprise-Secure-WPA3",
-            "bssid": "00:25:9c:cf:1b:41",
-            "radio_type": "802.11ax",
-            "authentication": "WPA3-Enterprise",
-            "cipher": "GCMP-256",
-            "channel": 36,
-            "band": "5 GHz",
-            "signal_percent": 94,
-            "rssi_dbm": -48,
-            "rx_rate_mbps": 1201.0,
-            "tx_rate_mbps": 1201.0,
-            "ipv4": "10.100.4.52",
-            "gateway_ip": "10.100.4.1",
-            "dns_servers": ["10.100.4.10", "1.1.1.1"]
-        },
-        "networks_in_range": [
-            {
-                "ssid": "Enterprise-Secure-WPA3",
-                "bssid": "00:25:9c:cf:1b:41",
-                "signal_percent": 94,
-                "rssi_dbm": -48,
-                "channel": 36,
-                "band": "5 GHz",
-                "radio_type": "802.11ax",
-                "authentication": "WPA3-Enterprise",
-                "encryption": "GCMP-256",
-                "security_grade": "A+",
-                "connected": True,
-                "notes": "CNSA 2.0 & Suite-B 192-bit compliant"
-            },
-            {
-                "ssid": "Enterprise-Secure-WPA3",
-                "bssid": "00:25:9c:cf:1b:42",
-                "signal_percent": 88,
-                "rssi_dbm": -54,
-                "channel": 36,
-                "band": "5 GHz",
-                "radio_type": "802.11ax",
-                "authentication": "WPA3-Enterprise",
-                "encryption": "GCMP-256",
-                "security_grade": "A+",
-                "connected": False,
-                "notes": "Secondary Roaming Node (Mesh BSSID)"
-            },
-            {
-                "ssid": "Corp-Staff-WPA2",
-                "bssid": "00:25:9c:cf:1b:43",
-                "signal_percent": 91,
-                "rssi_dbm": -51,
-                "channel": 40,
-                "band": "5 GHz",
-                "radio_type": "802.11ax",
-                "authentication": "WPA2-Enterprise",
-                "encryption": "CCMP-128",
-                "security_grade": "A",
-                "connected": False,
-                "notes": "PMF Mandatory"
-            },
-            {
-                "ssid": "Faculty-WiFi-6",
-                "bssid": "58:61:63:21:cf:a7",
-                "signal_percent": 85,
-                "rssi_dbm": -57,
-                "channel": 149,
-                "band": "5 GHz",
-                "radio_type": "802.11ax",
-                "authentication": "WPA3-Personal",
-                "encryption": "CCMP",
-                "security_grade": "A+",
-                "connected": False,
-                "notes": "Protected SAE Authentication"
-            },
-            {
-                "ssid": "Visitor-Guest-Open",
-                "bssid": "00:25:9c:cf:1b:49",
-                "signal_percent": 76,
-                "rssi_dbm": -62,
-                "channel": 1,
-                "band": "2.4 GHz",
-                "radio_type": "802.11ac",
-                "authentication": "Enhanced Open (OWE)",
-                "encryption": "OWE",
-                "security_grade": "B+",
-                "connected": False,
-                "notes": "Opportunistic Wireless Encryption enabled"
-            },
-            {
-                "ssid": "IoT-Legacy-Sensor",
-                "bssid": "00:25:9c:cf:1b:45",
-                "signal_percent": 74,
-                "rssi_dbm": -63,
-                "channel": 6,
-                "band": "2.4 GHz",
-                "radio_type": "802.11n",
-                "authentication": "WPA2-Personal",
-                "encryption": "CCMP",
-                "security_grade": "B",
-                "connected": False,
-                "notes": "Isolated VLAN recommended"
-            },
-            {
-                "ssid": "Public-Free-Unsecured",
-                "bssid": "da:65:64:0c:db:ee",
-                "signal_percent": 68,
-                "rssi_dbm": -68,
-                "channel": 11,
-                "band": "2.4 GHz",
-                "radio_type": "802.11n",
-                "authentication": "Open",
-                "encryption": "None",
-                "security_grade": "F",
-                "connected": False,
-                "notes": "Unencrypted Cleartext RF"
-            }
-        ],
-        "vpn": {
-            "connected": True,
-            "vpn_type": "WireGuard Kernel Accelerated",
-            "adapter_name": "wg-cipherguard0",
-            "virtual_ip": "10.200.0.4",
-            "egress_ip": "198.51.100.42",
-            "egress_isp": "Cloudflare Magic WAN / Secure Tunnel",
-            "egress_city": "New Delhi",
-            "egress_country": "IN",
-            "dns_leak_detected": False,
-            "kill_switch_active": True
-        },
-        "score": 94,
-        "grade": "A+",
-        "started": "2026-09-12T05:25:00.000000+00:00",
-        "findings": [
-            {
-                "severity": "info",
-                "rule_id": "WIFI-001",
-                "title": "Protected Management Frames (PMF / 802.11w) Active",
-                "subject": "SSID: Enterprise-Secure-WPA3",
-                "detail": "BSSID 00:25:9c:cf:1b:41 enforces 802.11w Protected Management Frames, mitigating deauthentication and disassociation hijacking.",
-                "remediation": "Maintain PMF required policy on all wireless LAN controllers.",
-                "reference": "IEEE 802.11w / NIST SP 800-162",
-                "inferred": False
-            },
-            {
-                "severity": "info",
-                "rule_id": "VPN-002",
-                "title": "WireGuard Cryptographic Tunnel Verified",
-                "subject": "Tunnel wg-cipherguard0 (10.200.0.4)",
-                "detail": "Layer-3 traffic encapsulated using ChaCha20-Poly1305 AEAD and Curve25519 key exchange. Zero plain DNS leakage detected outside the tunnel.",
-                "remediation": "Review post-quantum hybrid KEM roadmap (RFC 9370) for quantum-resilient tunnel upgrades.",
-                "reference": "RFC 8247 / NIST SP 800-77 Rev 1",
-                "inferred": False
-            }
-        ],
-        "counts": {
-            "critical": 0,
-            "high": 0,
-            "medium": 0,
-            "low": 0,
-            "info": 2
-        },
-        "summary": "Connected to 'Enterprise-Secure-WPA3' on 5 GHz (Channel 36). WPA3-Enterprise / GCMP-256 with 94% signal. WireGuard tunnel active. Score: 94/100 (Grade A+).",
-        "dns_posture": {
-            "dns_servers": ["10.100.4.10", "1.1.1.1"],
-            "gateway": "10.100.4.1",
-            "ipv4": "10.100.4.52"
-        },
-        "quantum_risk": "Quantum-Resilient Tunnel Recommended for Long-Term Data (CNSA 2.0)"
-    }
-
-"""Static site export for GitHub Pages.
-
-GitHub Pages serves files, not processes. The dashboard normally gets its data
-from `/api/analyze`, which runs the dissector, the inference engine and the
-audit rules in Python — none of which can execute on a static host.
-
-So the analysis is done ahead of time and its output written as JSON, in exactly
-the shape the live API returns. The dashboard then loads a file instead of
-calling an endpoint, and every panel renders identically because nothing else
-about it changes.
-
-Two things this is not. It is not a mock: every byte in the exported JSON came
-from the real pipeline running over the real captures, so the findings, scores
-and inferences are genuine. And it is not a substitute for the tool — a static
-page cannot analyse a capture the visitor supplies, which is the whole point of
-the product. The export exists so a reviewer can see real output in one click
-rather than installing Python first.
-"""
-
-
-
 import json
 import os
 import shutil
@@ -204,6 +8,34 @@ from ..api.server import STATIC_DIR
 from ..intel.pqc import roadmap as pqc_roadmap
 from ..pipeline import analyze, throughput_estimate
 from ..remediation.synth import PLATFORM_NAMES, detect_platforms, synthesize
+
+def _get_default_demo_wifi() -> dict:
+    snapshot_path = os.path.join(os.path.dirname(__file__), "live_wifi_snapshot.json")
+    if os.path.exists(snapshot_path):
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if data.get("networks_in_range"):
+                    return data
+        except Exception:
+            pass
+    return {
+        "interface": {
+            "name": "Wi-Fi (Intel Wireless)",
+            "ssid": "Svyasa-Staff",
+            "bssid": "58:61:63:11:cf:a6",
+            "state": "connected",
+            "signal_percent": 83,
+            "rssi_dbm": -58,
+            "channel": 149,
+            "band": "5 GHz",
+            "authentication": "WPA2-Personal",
+            "cipher": "CCMP"
+        },
+        "networks_in_range": [],
+        "score": 85,
+        "grade": "B"
+    }
 
 DEFAULT_OUT = "docs"
 
