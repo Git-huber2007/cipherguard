@@ -618,6 +618,7 @@ class WifiAuditor:
                     chan = int(chan_str) if chan_str.isdigit() else 0
                     sig = int(sig_str) if sig_str.isdigit() else 50
                     band = "5 GHz" if chan > 14 else "2.4 GHz"
+                    enc_val = "CCMP" if "WPA" in sec_str else "None"
                     networks.append(
                         WifiNetwork(
                             ssid=ssid or "[Hidden SSID]",
@@ -628,8 +629,9 @@ class WifiAuditor:
                             band=band,
                             radio_type="802.11",
                             authentication=sec_str or "Open",
-                            cipher="CCMP" if "WPA" in sec_str else "None",
-                            security_grade=self._grade_network(sec_str, "CCMP" if "WPA" in sec_str else "None"),
+                            encryption=enc_val,
+                            cipher=enc_val,
+                            security_grade=self._grade_network(sec_str, enc_val),
                         )
                     )
         except Exception:

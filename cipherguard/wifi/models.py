@@ -32,12 +32,19 @@ class WifiNetwork:
     band: str  # "2.4 GHz", "5 GHz", "6 GHz", or "Unknown"
     radio_type: str  # "802.11ax", "802.11ac", "802.11n", etc.
     authentication: str  # "WPA3-Personal", "WPA2-Personal", "Open", etc.
-    encryption: str  # "CCMP", "GCMP", "TKIP", "None"
-    security_grade: str  # "A+", "A", "B", "D", "F"
+    encryption: str = "CCMP"  # "CCMP", "GCMP", "TKIP", "None"
+    security_grade: str = "B"  # "A+", "A", "B", "D", "F"
     connected: bool = False
     is_rogue: bool = False
     rogue_reason: str = ""
     notes: str = ""
+    cipher: str = ""  # alias for encryption to ensure compatibility
+
+    def __post_init__(self) -> None:
+        if not self.cipher and self.encryption:
+            self.cipher = self.encryption
+        elif not self.encryption and self.cipher:
+            self.encryption = self.cipher
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
