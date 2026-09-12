@@ -1,40 +1,66 @@
 @echo off
-title CipherGuard - Dual-Layer Wireless & VPN Security Assessment Platform
+setlocal enabledelayedexpansion
+title CipherGuard - Dual-Layer Wireless and VPN Security Platform
 cls
+
+:: Ensure we are running from the directory where this script is located
+cd /d "%~dp0"
+
 echo ======================================================================
 echo   CIPHERGUARD - DUAL-LAYER SECURITY PLATFORM (Wi-Fi + IPsec/VPN)
-echo   SIH26160 / NTRO Compliance - NIST SP 800-77 & RFC 8247 Hardening
+echo   SIH26160 / NTRO Compliance - NIST SP 800-77 and RFC 8247 Hardening
 echo ======================================================================
 echo.
 
-set PY_EXE=
-if exist %LOCALAPPDATA%\Programs\Python\Python312\python.exe (
-    set PY_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
-) else (
-    where python >nul 2>nul
-    if %errorlevel% equ 0 (
-        set PY_EXE=python
-    ) else (
-        where py >nul 2>nul
-        if %errorlevel% equ 0 (
-            set PY_EXE=py
-        )
+set "PY_EXE="
+
+:: 1. Check Python 3.12 default install path
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+    set "PY_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+)
+
+:: 2. Check py launcher
+if not defined PY_EXE (
+    where py >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PY_EXE=py -3"
     )
 )
 
-if %PY_EXE%==" (
- echo [ERROR] Python 3.10+ could not be located.
- echo Please install Python 3.10+ and add it to PATH.
- pause
- exit /b 1
+:: 3. Check python on PATH
+if not defined PY_EXE (
+    where python >nul 2>nul
+    if !errorlevel! equ 0 (
+        set "PY_EXE=python"
+    )
 )
 
-echo [*] Python Interpreter: %PY_EXE%
+:: 4. Verify python is available
+if not defined PY_EXE (
+    echo [ERROR] Python 3.10+ was not found on your system.
+    echo Please install Python from https://www.python.org/downloads/
+    echo and ensure "Add Python to PATH" is checked during installation.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo [*] Project Directory: %CD%
+echo [*] Python Interpreter: !PY_EXE!
 echo [*] Launching CipherGuard Dashboard on http://127.0.0.1:8000/ ...
-echo [*] Press Ctrl+C anytime to stop the server.
+echo [*] Opening your default web browser...
+echo [*] (Keep this window open. Press Ctrl+C anytime to stop the server.)
+echo ======================================================================
 echo.
 
-timeout /t 2 >nul
-start  http://127.0.0.1:8000/
-%PY_EXE% -m cipherguard.cli serve --port 8000
-pause
+:: Open browser after 2 seconds in background
+start "" "http://127.0.0.1:8000/"
+
+:: Start dashboard server
+!PY_EXE! -m cipherguard.cli serve --port 8000
+
+if !errorlevel! neq 0 (
+    echo.
+    echo [!] Server exited with an error code.
+    pause
+)

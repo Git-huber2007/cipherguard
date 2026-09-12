@@ -14,7 +14,7 @@ import hmac
 import secrets
 
 from fastapi import Depends, FastAPI, Header, HTTPException, UploadFile, File, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -119,15 +119,11 @@ def create_app(
     # dependency on purpose: they contain no assessment data, and gating them
     # would leave an authenticated deployment rendering an unstyled page before
     # the token prompt ever appears.
-    os.makedirs(STATIC_DIR, exist_ok=True)
-    app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", include_in_schema=False)
-    def index() -> Response:
-        index_file = os.path.join(STATIC_DIR, "index.html")
-        if os.path.exists(index_file):
-            return FileResponse(index_file)
-        return PlainTextResponse("CipherGuard API is running. Static assets directory not found at " + STATIC_DIR)
+    def index() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
     # -- api ---------------------------------------------------------------
 

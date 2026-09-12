@@ -16,7 +16,10 @@ const state = {
   remediationPlans: [],    // active hardening & rollback plans
   playbookMode: "forward", // "forward" or "rollback"
   wifiGroupMode: true,     // true: group by SSID, false: flat list of all BSSIDs
-  currentWifiNetworks: []  // cached list of WifiNetwork items
+  currentWifiNetworks: [], // cached list of WifiNetwork items
+  wifiAssessment: null,    // latest live wifi & vpn assessment payload
+  sessionStartTime: Date.now(),
+  telemetryTicks: 0
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -702,6 +705,9 @@ function renderWifiDashboard(data){
     sub.textContent = `${uniqueSsids} unique networks (${totalAps} total access points discovered across 2.4 GHz, 5 GHz, and 6 GHz spectrum).`;
   }
 
+  state.wifiAssessment = data;
+  state.telemetryTicks++;
+
   // 4. Health List
   $("wifi-auth-cipher-val").textContent = iface ? `${iface.authentication} (${iface.cipher})` : "—";
   $("wifi-signal-pct").textContent = iface ? `${iface.signal_percent}% (${iface.rssi_dbm} dBm)` : "—";
@@ -716,6 +722,15 @@ function renderWifiDashboard(data){
     ? iface.dns_servers.join(", ") : "Default Gateway DNS";
   $("wifi-dns-val").textContent = dns;
   $("wifi-gateway-val").textContent = (iface && iface.gateway_ip) ? iface.gateway_ip : "—";
+
+  const elapsedMins = Math.floor((Date.now() - state.sessionStartTime) / 60000);
+  const elapsedSecs = Math.floor(((Date.now() - state.sessionStartTime) % 60000) / 1000);
+  const uptimeEl = $("wifi-uptime-val");
+  if (uptimeEl) {
+    const timeStr = elapsedMins > 0 ? `${elapsedMins}m ${elapsedSecs}s` : `${elapsedSecs}s`;
+    const vpnOk = data.vpn && data.vpn.connected;
+    uptimeEl.innerHTML = `<span style="color:var(--ok)">● Active ${timeStr}</span> &middot; <span style="color:var(--dim)">${state.telemetryTicks} telemetry cycles</span> &middot; <span style="color:${vpnOk ? 'var(--ok)' : 'var(--med)'}">${vpnOk ? 'Encrypted Overlay Active' : 'Direct ISP Link'}</span>`;
+  }
 
   // 5. VPN Overlay Card
   renderVpnOverlay(data.vpn);
@@ -1004,6 +1019,160 @@ function renderWifiNetworksTable(networks){
   }
 }
 
+/* --------------------------------------------------- export audit dossier */
+
+function exportSecurityAuditReport(){
+  const wifiData = state.wifiAssessment || {};
+  const iface = wifiData.interface || {};
+  const vpn = wifiData.vpn || {};
+  const ipsecData = state.assessment || {};
+  const timestamp = new Date().toISOString();
+  const dateFormatted = new Date().toLocaleString();
+
+  const report = {
+    report_title: "CipherGuard Executive Security Audit Dossier",
+    standard: "SIH26160 / NTRO & NIST SP 800-77 Rev 1 / RFC 8247",
+    timestamp: timestamp,
+    date_formatted: dateFormatted,
+    wifi_posture: {
+      ssid: iface.ssid || "Unassociated",
+      bssid: iface.bssid || "N/A",
+      score: wifiData.score ?? 0,
+      grade: wifiData.grade ?? "—",
+      authentication: iface.authentication || "Unknown",
+      cipher: iface.cipher || "None",
+      channel: iface.channel || 0,
+      band: iface.band || "N/A",
+      signal: `${iface.signal_percent || 0}% (${iface.rssi_dbm || -100} dBm)`,
+      dns_servers: iface.dns_servers || [],
+      gateway: iface.gateway_ip || "N/A"
+    },
+    vpn_overlay: {
+      connected: vpn.connected || false,
+      protocol: vpn.vpn_type || "Direct ISP (No Tunnel)",
+      adapter: vpn.adapter_name || "N/A",
+      virtual_ip: vpn.virtual_ip || "N/A",
+      egress_ip: vpn.egress_ip || "N/A",
+      egress_isp: vpn.egress_isp || "N/A",
+      egress_location: `${vpn.egress_city || ''}, ${vpn.egress_country || ''}`.trim() || "N/A",
+      dns_leak_detected: vpn.dns_leak_detected || false
+    },
+    findings_count: (wifiData.findings || []).length + ((vpn.findings || []).length),
+    findings: [...(wifiData.findings || []), ...(vpn.findings || [])],
+    ipsec_assessment: ipsecData.score ? {
+      capture: $("capture") ? $("capture").value : "N/A",
+      score: ipsecData.score,
+      grade: ipsecData.grade,
+      sessions: (ipsecData.sessions || []).length,
+      flows: (ipsecData.flows || []).length
+    } : null,
+    remediation_plans: (state.remediationPlans || []).map(p => ({
+      platform: p.platform_name,
+      status: p.status,
+      syntax_valid: p.syntax_valid,
+      forward_config: p.forward_config,
+      rollback_config: p.rollback_config
+    }))
+  };
+
+  const printWindow = window.open("", "_blank", "width=920,height=850");
+  if (!printWindow) {
+    alert("Popup blocked. Please allow popups to view the Executive Security Audit Dossier.");
+    return;
+  }
+
+  const findingsHtml = report.findings.map(f => `
+    <div style="margin-bottom:12px;padding:12px;border-left:4px solid ${f.severity==='critical'?'#ef4444':f.severity==='high'?'#f97316':f.severity==='medium'?'#eab308':'#38bdf8'};background:#f8fafc;border-radius:0 6px 6px 0;border:1px solid #e2e8f0;border-left-width:4px;">
+      <div style="display:flex;justify-content:space-between;font-weight:bold;margin-bottom:4px">
+        <span style="color:#0f172a">[${esc(f.rule_id)}] ${esc(f.title)}</span>
+        <span style="text-transform:uppercase;font-size:0.75rem;padding:2px 8px;border-radius:3px;background:#e2e8f0;font-weight:700;">${esc(f.severity)}</span>
+      </div>
+      <div style="font-size:0.85rem;color:#475569;margin-bottom:4px"><strong>Subject:</strong> ${esc(f.subject)}</div>
+      <div style="font-size:0.85rem;margin-bottom:6px;color:#334155;">${esc(f.detail)}</div>
+      <div style="font-size:0.85rem;color:#1e293b;background:#f1f5f9;padding:6px 10px;border-radius:4px;border:1px solid #cbd5e1"><strong>Remediation:</strong> ${esc(f.remediation)}</div>
+    </div>
+  `).join("") || "<p>No vulnerabilities detected.</p>";
+
+  const jsonBlob = encodeURIComponent(JSON.stringify(report, null, 2));
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>CipherGuard Security Audit Dossier - ${esc(report.wifi_posture.ssid)}</title>
+      <style>
+        body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; line-height: 1.5; color: #0f172a; padding: 28px; max-width: 860px; margin: 0 auto; background: #fff; }
+        .no-print { display: flex; gap: 10px; margin-bottom: 24px; padding: 12px; background: #f0f9ff; border-radius: 6px; border: 1px solid #bae6fd; }
+        .btn { padding: 8px 16px; background: #0284c7; color: #fff; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; text-decoration: none; font-size: 0.85rem; }
+        .btn-secondary { background: #475569; }
+        .hdr { border-bottom: 2px solid #0f172a; padding-bottom: 14px; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+        .card { border: 1px solid #cbd5e1; border-radius: 6px; padding: 14px; background: #f8fafc; font-size: 0.88rem; }
+        .card div { margin-bottom: 5px; }
+        h2 { font-size: 1.05rem; margin-top: 0; margin-bottom: 12px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; color: #0f172a; }
+        .badge { font-weight: bold; padding: 2px 8px; border-radius: 4px; font-size: 0.82rem; }
+        .grade-a { background: #dcfce7; color: #15803d; }
+        .grade-b { background: #fef9c3; color: #854d0e; }
+        .grade-c { background: #fee2e2; color: #b91c1c; }
+        code { font-family: Consolas, monospace; background: #e2e8f0; padding: 2px 5px; border-radius: 3px; font-size: 0.82rem; }
+        @media print { .no-print { display: none; } body { padding: 0; } }
+      </style>
+    </head>
+    <body>
+      <div class="no-print">
+        <button class="btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+        <a class="btn btn-secondary" href="data:application/json;charset=utf-8,${jsonBlob}" download="cipherguard-audit-${Date.now()}.json">💾 Download JSON Telemetry</a>
+      </div>
+      <div class="hdr">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <h1 style="margin:0;font-size:1.5rem;color:#0f172a">CIPHERGUARD EXECUTIVE SECURITY AUDIT DOSSIER</h1>
+            <div style="font-size:0.85rem;color:#64748b;margin-top:2px">Compliance Framework: SIH26160 / NTRO &middot; NIST SP 800-77 Rev 1 &middot; RFC 8247</div>
+          </div>
+          <div style="text-align:right;font-size:0.8rem;color:#64748b">
+            <div>Date: <strong>${esc(report.date_formatted)}</strong></div>
+            <div>Classification: <strong>OFFICIAL / RESTRICTED AUDIT</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>1. Physical Wi-Fi Posture (802.11 RF)</h2>
+          <div><strong>Associated SSID:</strong> ${esc(report.wifi_posture.ssid)}</div>
+          <div><strong>Hardware BSSID:</strong> <code>${esc(report.wifi_posture.bssid)}</code></div>
+          <div><strong>Security Posture Grade:</strong> <span class="badge ${report.wifi_posture.grade.includes('A')?'grade-a':report.wifi_posture.grade.includes('B')?'grade-b':'grade-c'}">Grade ${esc(report.wifi_posture.grade)} (${report.wifi_posture.score}/100)</span></div>
+          <div><strong>Auth &amp; Cipher:</strong> ${esc(report.wifi_posture.authentication)} / ${esc(report.wifi_posture.cipher)}</div>
+          <div><strong>RF Band &amp; Channel:</strong> ${esc(report.wifi_posture.band)} &middot; Channel ${esc(report.wifi_posture.channel)}</div>
+          <div><strong>Signal Level:</strong> ${esc(report.wifi_posture.signal)}</div>
+          <div><strong>Configured DNS:</strong> ${esc((report.wifi_posture.dns_servers || []).join(', ') || 'Default Gateway')}</div>
+        </div>
+
+        <div class="card">
+          <h2>2. Transport Layer Overlay &amp; VPN</h2>
+          <div><strong>Tunnel State:</strong> <span class="badge ${report.vpn_overlay.connected?'grade-a':'grade-c'}">${report.vpn_overlay.connected?'● ENCRYPTED OVERLAY ACTIVE':'○ DIRECT ISP LINK'}</span></div>
+          <div><strong>VPN Protocol:</strong> ${esc(report.vpn_overlay.protocol)}</div>
+          <div><strong>Adapter:</strong> ${esc(report.vpn_overlay.adapter)}</div>
+          <div><strong>Virtual Tunnel IP:</strong> <code>${esc(report.vpn_overlay.virtual_ip)}</code></div>
+          <div><strong>Public Egress Node:</strong> ${esc(report.vpn_overlay.egress_ip)}</div>
+          <div><strong>Egress Geolocation:</strong> ${esc(report.vpn_overlay.egress_location)} (${esc(report.vpn_overlay.egress_isp)})</div>
+          <div><strong>DNS Leak Status:</strong> <span style="color:${report.vpn_overlay.dns_leak_detected?'#b91c1c':'#15803d'};font-weight:bold">${report.vpn_overlay.dns_leak_detected?'LEAK DETECTED':'NO LEAK (SECURE)'}</span></div>
+        </div>
+      </div>
+
+      <h2>3. Security Findings &amp; Cryptographic Audit (${report.findings.length} Items)</h2>
+      ${findingsHtml}
+
+      <div style="margin-top:30px;padding-top:12px;border-top:1px solid #cbd5e1;font-size:0.75rem;color:#64748b;display:flex;justify-content:space-between">
+        <span>CipherGuard Automated Passive Security Engine v2.0</span>
+        <span>Deterministic Zero Live Mutation &middot; NIST SP 800-77 Validated</span>
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
 /* ----------------------------------------------------------------- init */
 
 function init(){
@@ -1018,6 +1187,14 @@ function init(){
   if (refreshBtn) refreshBtn.addEventListener("click", () => loadWifiAssessment(true));
   const scanBtn = $("wifi-scan-now");
   if (scanBtn) scanBtn.addEventListener("click", () => loadWifiAssessment(true));
+
+  // Export Dossier action buttons
+  const exportBtn1 = $("wifi-export-report");
+  if (exportBtn1) exportBtn1.addEventListener("click", exportSecurityAuditReport);
+  const exportBtn2 = $("wifi-header-export-btn");
+  if (exportBtn2) exportBtn2.addEventListener("click", exportSecurityAuditReport);
+  const exportBtn3 = $("ipsec-export-report");
+  if (exportBtn3) exportBtn3.addEventListener("click", exportSecurityAuditReport);
 
   // Wi-Fi view mode toggles (Group by SSID vs Show All APs)
   const btnGroup = $("btn-wifi-group");

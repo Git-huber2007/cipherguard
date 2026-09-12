@@ -1843,11 +1843,11 @@ def test_static_export_is_self_contained(tmp_path):
         assert (out / rel).exists(), f"{rel} missing from the static build"
 
     # absolute /static/ paths break under a Pages project subpath
-    html = (out / "index.html").read_text()
+    html = (out / "index.html").read_text(encoding="utf-8")
     assert "/static/" not in html
 
     entry = manifest["captures"][0]
-    payload = _json.loads((out / entry["file"]).read_text())
+    payload = _json.loads((out / entry["file"]).read_text(encoding="utf-8"))
     for key in ("score", "grade", "findings", "flows", "sessions",
                 "platforms", "roadmap", "remediation"):
         assert key in payload, f"exported analysis is missing {key}"

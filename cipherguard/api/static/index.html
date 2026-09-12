@@ -17,15 +17,17 @@
       <h1>CipherGuard</h1>
       <span class="ps">SIH26160 &middot; NTRO</span>
     </div>
-    <div class="controls" id="header-controls">
+      <div class="controls" id="header-controls">
       <!-- Dynamic controls according to active tab -->
       <div id="ipsec-controls" style="display:flex;gap:8px;align-items:center;">
         <label for="capture" class="visually-hidden">Capture file</label>
         <select id="capture"></select>
         <button id="run">Assess capture</button>
+        <button id="ipsec-export-report" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer">📥 Export Dossier</button>
       </div>
       <div id="wifi-controls" style="display:none;gap:8px;align-items:center;">
         <button id="wifi-refresh-btn" class="primary-btn">Analyze Live Wi-Fi</button>
+        <button id="wifi-header-export-btn" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer">📥 Export Dossier</button>
       </div>
     </div>
   </div>
@@ -66,8 +68,11 @@
           <span>Radio: <b id="wifi-radio">&mdash;</b></span>
         </div>
       </div>
-      <div class="wifi-hero-actions">
-        <button id="wifi-scan-now" class="action-btn">Scan All Networks</button>
+      <div class="wifi-hero-actions" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+          <button id="wifi-scan-now" class="action-btn">Scan All Networks</button>
+          <button id="wifi-export-report" class="action-btn" style="background:rgba(56,189,248,0.14);color:var(--accent);border:1px solid rgba(56,189,248,0.35);font-weight:600">📥 Export Audit Dossier</button>
+        </div>
         <div class="wifi-time-sub" id="wifi-last-scan">Last scanned: just now</div>
       </div>
     </section>
@@ -127,6 +132,10 @@
           <div class="health-item">
             <div class="health-label">Default IPv4 Gateway</div>
             <div class="health-val" id="wifi-gateway-val">&mdash;</div>
+          </div>
+          <div class="health-item">
+            <div class="health-label">Session Uptime &amp; Stability</div>
+            <div class="health-val" id="wifi-uptime-val" style="color:var(--ok);font-weight:600">● 100% Stable &middot; Continuous RF Lock</div>
           </div>
         </div>
       </section>

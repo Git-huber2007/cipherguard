@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
+models/
+samples/*.pcap
 docker/captures/*.pcap
 .pytest_cache/
 *.egg-info/
