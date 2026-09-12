@@ -49,7 +49,9 @@ class WifiAuditor:
             interface_info = self._get_windows_current_interface()
             conn_ssid = interface_info.ssid if interface_info else ""
             conn_bssid = interface_info.bssid if interface_info else ""
-            networks = self._get_windows_networks(conn_ssid, conn_bssid, force_scan=force_scan)
+            networks = self._get_windows_networks(
+                conn_ssid, conn_bssid, force_scan=force_scan, interface_info=interface_info
+            )
             dns_info = self._get_windows_network_config()
             if interface_info and dns_info:
                 interface_info.dns_servers = dns_info.get("dns_servers", [])
@@ -355,6 +357,7 @@ class WifiAuditor:
         connected_ssid: str = "",
         connected_bssid: str = "",
         force_scan: bool = False,
+        interface_info: WifiInterfaceInfo | None = None,
     ) -> list[WifiNetwork]:
         # If explicitly forced or cache is empty/stale, trigger an active 802.11 probe scan
         if force_scan or len(self._bss_cache) <= 1:
@@ -449,21 +452,39 @@ class WifiAuditor:
                     self._bss_cache.pop(bssid, None)
 
         # Ensure strict single-AP connection attribution
+        found_conn = False
         if connected_bssid:
             norm_conn_bssid = connected_bssid.lower().strip()
             for net in networks:
-                net.connected = (net.bssid.lower() == norm_conn_bssid)
-        elif connected_ssid:
-            # If BSSID wasn't determined, attribute connected only to the strongest AP of that SSID
-            norm_conn_ssid = connected_ssid.lower().strip()
-            attributed = False
-            # Sort temporarily to find strongest
-            for net in sorted(networks, key=lambda n: -n.signal_percent):
-                if not attributed and net.ssid.lower().strip() == norm_conn_ssid:
+                if net.bssid.lower().strip() == norm_conn_bssid:
                     net.connected = True
-                    attributed = True
+                    found_conn = True
                 else:
                     net.connected = False
+
+        if not found_conn and connected_ssid:
+            norm_conn_ssid = connected_ssid.lower().strip()
+            for net in sorted(networks, key=lambda n: -n.signal_percent):
+                if net.ssid.lower().strip() == norm_conn_ssid:
+                    net.connected = True
+                    found_conn = True
+                    break
+
+        # If the active connected AP was missing from scan results, inject it
+        if not found_conn and interface_info and interface_info.state.lower() == "connected":
+            networks.insert(0, WifiNetwork(
+                ssid=interface_info.ssid or "(Connected Network)",
+                bssid=interface_info.bssid or "—",
+                signal_percent=interface_info.signal_percent or 80,
+                rssi_dbm=interface_info.rssi_dbm or -60,
+                channel=interface_info.channel or 0,
+                band=interface_info.band or "5 GHz",
+                radio_type=interface_info.radio_type or "802.11",
+                authentication=interface_info.authentication or "WPA2-Personal",
+                encryption=interface_info.cipher or "CCMP",
+                security_grade=self._grade_network(interface_info.authentication, interface_info.cipher),
+                connected=True,
+            ))
 
         # Sort: connected first, then by signal percent descending
         networks.sort(key=lambda n: (not n.connected, -n.signal_percent))
