@@ -9,13 +9,13 @@ from __future__ import annotations
 import ctypes
 import sys
 import time
-from ctypes import wintypes
 from typing import Any
 
 is_windows = sys.platform.startswith("win")
 
 if is_windows:
     try:
+        from ctypes import wintypes
         wlanapi = ctypes.windll.wlanapi
 
         class GUID(ctypes.Structure):
