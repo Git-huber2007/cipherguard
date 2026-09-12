@@ -198,11 +198,11 @@
           <h2 style="margin-bottom:2px">Visible Wi-Fi Networks in Range <span class="domain-tag obs">observed</span></h2>
           <div class="sub" id="wifi-networks-subtitle">Nearby access points discovered across 2.4 GHz, 5 GHz, and 6 GHz spectrum.</div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;background:rgba(15,23,42,0.6);padding:3px;border-radius:6px;border:1px solid var(--border)">
-          <button type="button" class="btn-toggle active" id="btn-wifi-group" style="padding:4px 10px;font-size:0.75rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:var(--accent);color:#0f172a;transition:all 0.15s" title="Group multiple access points of the same network together">
+        <div class="wifi-view-toggle-group">
+          <button type="button" class="btn-toggle active" id="btn-wifi-group" title="Group multiple access points of the same network together">
             🏢 Group by Network (SSID)
           </button>
-          <button type="button" class="btn-toggle" id="btn-wifi-all" style="padding:4px 10px;font-size:0.75rem;font-weight:600;border:none;border-radius:4px;cursor:pointer;background:transparent;color:var(--dim);transition:all 0.15s" title="Show every physical access point BSSID individually">
+          <button type="button" class="btn-toggle" id="btn-wifi-all" title="Show every physical access point BSSID individually">
             📡 Show All APs (BSSIDs)
           </button>
         </div>

@@ -29,6 +29,12 @@
   --info:#6b7a86;
   --ok:#1f6b4a;
 
+  /* aliases for UI consistency & backward compatibility */
+  --accent:#1b6e8c;
+  --accent-bg:#e2eff4;
+  --border:#c3cfd8;
+  --dim:#5a6b78;
+
   --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
 }
@@ -515,6 +521,255 @@ footer{margin-top:34px;font-size:.79rem;color:var(--faint);max-width:74ch}
 .grade-badge.B{background:#fef9c3;color:#854d0e}
 .grade-badge.D{background:#ffedd5;color:#9a3412}
 .grade-badge.F{background:#fee2e2;color:#991b1b}
+
+/* ---------- Wi-Fi Table View Toggle Group ---------- */
+.wifi-view-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--sunk);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid var(--rule);
+}
+.wifi-view-toggle-group .btn-toggle {
+  padding: 5px 12px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--muted);
+  transition: all 0.15s ease;
+}
+.wifi-view-toggle-group .btn-toggle:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.04);
+}
+.wifi-view-toggle-group .btn-toggle.active {
+  background: var(--surface);
+  color: var(--observed);
+  border-color: var(--rule);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* ---------- Mesh Access Points & Roaming Cluster Styling ---------- */
+.mesh-count-badge {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--observed-bg);
+  color: var(--observed);
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid #b8d9e6;
+  white-space: nowrap;
+}
+
+.mesh-cell-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.mesh-cell-summary code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #e2e8f0;
+  color: var(--ink);
+}
+
+.active-ap-pill {
+  color: var(--ok);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.best-signal-pill {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.btn-ap-subtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: var(--observed);
+  cursor: pointer;
+  font-size: 0.73rem;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 4px;
+  margin-top: 4px;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+.btn-ap-subtoggle:hover {
+  background: var(--observed-bg);
+  border-color: var(--observed);
+  color: var(--observed);
+}
+.btn-ap-subtoggle.expanded {
+  background: var(--observed);
+  border-color: var(--observed);
+  color: #ffffff;
+}
+.btn-ap-subtoggle .subtoggle-icon {
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.data-table tr.mesh-subgroup-row,
+.data-table tr.mesh-subgroup-row:hover {
+  background: #f8fafc;
+}
+
+.data-table td.mesh-subgroup-cell {
+  padding: 14px 20px 18px 20px !important;
+  background: #f8fafc !important;
+  border-top: 1px dashed var(--rule) !important;
+  border-bottom: 2px solid var(--rule) !important;
+}
+
+.mesh-subgroup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.mesh-subgroup-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mesh-subgroup-title strong {
+  color: var(--observed);
+  font-weight: 700;
+}
+.mesh-subgroup-title .mesh-icon {
+  font-size: 0.95rem;
+}
+.mesh-count-tag {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #e2e8f0;
+  color: #334155;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+}
+.mesh-subgroup-meta {
+  font-size: 0.72rem;
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.mesh-ap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+.mesh-ap-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mesh-ap-card:hover {
+  border-color: var(--observed);
+  box-shadow: 0 2px 8px rgba(27, 110, 140, 0.12);
+}
+
+.mesh-ap-card.is-connected {
+  background: #f0fdf4;
+  border: 1.5px solid #22c55e;
+  box-shadow: 0 2px 6px rgba(34, 197, 94, 0.12);
+}
+
+.mesh-ap-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.mesh-bssid {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+  letter-spacing: 0.02em;
+}
+.mesh-ap-card.is-connected .mesh-bssid {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.mesh-ap-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.mesh-ap-badge.connected {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #86efac;
+  font-weight: 700;
+}
+.mesh-ap-badge.neighbor {
+  background: #f1f5f9;
+  color: var(--muted);
+  border: 1px solid #e2e8f0;
+}
+
+.mesh-ap-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.76rem;
+}
+.mesh-ap-spec {
+  color: #334155;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mesh-ap-signal {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+}
 
 /* ---------- VPN Overlay & Tunnel Card ---------- */
 .vpn-overlay-panel{

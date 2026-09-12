@@ -1907,19 +1907,19 @@ function renderWifiNetworksTable(networks){
       const cls = isConnected ? "active-net" : "";
       const activeLabel = isConnected ? ` <span class="sev-chip info" style="font-size:0.7rem;padding:1px 5px">CONNECTED</span>` : "";
       const meshLabel = apCount > 1 
-        ? `<span style="margin-left:6px;font-size:0.7rem;background:rgba(56,189,248,0.12);color:var(--accent);padding:2px 6px;border-radius:4px;border:1px solid rgba(56,189,248,0.25)">${apCount} APs (Mesh)</span>`
+        ? `<span class="mesh-count-badge">${apCount} APs (Mesh)</span>`
         : "";
       const badgeCls = bestNet.security_grade ? bestNet.security_grade.replace("+", "") : "B";
 
       let apCell = "";
       if (isConnected && connectedNet) {
-        apCell = `<div><code>${esc(connectedNet.bssid)}</code> <span style="color:var(--ok);font-size:0.72rem;font-weight:600">● Active AP</span></div>`;
+        apCell = `<div class="mesh-cell-summary"><code>${esc(connectedNet.bssid)}</code> <span class="active-ap-pill">● Active AP</span></div>`;
         if (apCount > 1) {
-          apCell += `<button type="button" class="btn-ap-subtoggle" data-group="${gIdx}" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.72rem;padding:2px 0;text-decoration:underline">▼ View all ${apCount} mesh APs</button>`;
+          apCell += `<button type="button" class="btn-ap-subtoggle" data-group="${gIdx}" aria-expanded="false"><span class="subtoggle-icon">▼</span> View all ${apCount} mesh APs</button>`;
         }
       } else if (apCount > 1) {
-        apCell = `<div><code>${esc(bestNet.bssid)}</code> <span style="color:var(--dim);font-size:0.72rem">(Best signal)</span></div>
-                  <button type="button" class="btn-ap-subtoggle" data-group="${gIdx}" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:0.72rem;padding:2px 0;text-decoration:underline">▼ View all ${apCount} mesh APs</button>`;
+        apCell = `<div class="mesh-cell-summary"><code>${esc(bestNet.bssid)}</code> <span class="best-signal-pill">(Best signal)</span></div>
+                  <button type="button" class="btn-ap-subtoggle" data-group="${gIdx}" aria-expanded="false"><span class="subtoggle-icon">▼</span> View all ${apCount} mesh APs</button>`;
       } else {
         apCell = `<code>${esc(items[0].bssid)}</code>`;
       }
@@ -1943,24 +1943,35 @@ function renderWifiNetworksTable(networks){
       // If multi-AP, render collapsible detail subrow
       if (apCount > 1) {
         const sortedItems = [...items].sort((a,b) => (b.connected ? 1 : 0) - (a.connected ? 1 : 0) || b.signal_percent - a.signal_percent);
-        html += `<tr id="wifi-subgroup-${gIdx}" style="display:none;background:rgba(15,23,42,0.55)">
-          <td colspan="6" style="padding:10px 16px 14px 20px;border-top:1px dashed var(--border);border-bottom:1px solid var(--border)">
-            <div style="font-size:0.75rem;color:var(--accent);font-weight:600;margin-bottom:8px">
-              📡 Physical Access Points for ESSID "${esc(ssid)}" (${apCount} Access Points in Roaming Infrastructure):
+        html += `<tr id="wifi-subgroup-${gIdx}" class="mesh-subgroup-row" style="display:none">
+          <td colspan="6" class="mesh-subgroup-cell">
+            <div class="mesh-subgroup-header">
+              <div class="mesh-subgroup-title">
+                <span class="mesh-icon">📡</span>
+                <span>Physical Access Points for ESSID <strong>"${esc(ssid)}"</strong></span>
+                <span class="mesh-count-tag">${apCount} APs in Roaming Cluster</span>
+              </div>
+              <div class="mesh-subgroup-meta">802.11k/v Fast BSS Transition</div>
             </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:8px">
+            <div class="mesh-ap-grid">
               ${sortedItems.map(ap => {
                 const isApConn = ap.connected;
-                const border = isApConn ? "1px solid var(--ok)" : "1px solid var(--border)";
-                const bg = isApConn ? "rgba(34,197,94,0.08)" : "rgba(30,41,59,0.5)";
-                return `<div style="background:${bg};border:${border};border-radius:6px;padding:8px 10px;font-size:0.75rem">
-                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-                    <code>${esc(ap.bssid)}</code>
-                    ${isApConn ? '<span class="sev-chip info" style="font-size:0.65rem;padding:1px 4px">CONNECTED AP</span>' : '<span style="color:var(--dim);font-size:0.7rem">Neighbor AP</span>'}
+                const cardCls = isApConn ? "mesh-ap-card is-connected" : "mesh-ap-card";
+                const sigColor = ap.signal_percent >= 70 ? "var(--ok)" : ap.signal_percent >= 45 ? "var(--med)" : "var(--crit)";
+                return `<div class="${cardCls}">
+                  <div class="mesh-ap-top">
+                    <code class="mesh-bssid">${esc(ap.bssid)}</code>
+                    ${isApConn 
+                      ? '<span class="mesh-ap-badge connected">● CONNECTED AP</span>' 
+                      : '<span class="mesh-ap-badge neighbor">Neighbor AP</span>'}
                   </div>
-                  <div style="display:flex;justify-content:space-between;color:var(--dim)">
-                    <span>${esc(ap.band)} &middot; Ch ${esc(ap.channel)}</span>
-                    <span style="color:${ap.signal_percent>60?'var(--ok)':'var(--med)'};font-weight:600">${ap.signal_percent}% (${ap.rssi_dbm} dBm)</span>
+                  <div class="mesh-ap-bottom">
+                    <div class="mesh-ap-spec">
+                      <span>${esc(ap.band)} &middot; Ch ${esc(ap.channel)}</span>
+                    </div>
+                    <div class="mesh-ap-signal" style="color:${sigColor}">
+                      ${ap.signal_percent}% (${ap.rssi_dbm} dBm)
+                    </div>
                   </div>
                 </div>`;
               }).join("")}
@@ -1981,8 +1992,15 @@ function renderWifiNetworksTable(networks){
         if (!subRow) return;
         const isHidden = subRow.style.display === "none";
         subRow.style.display = isHidden ? "table-row" : "none";
-        const count = subRow.querySelectorAll("code").length;
-        btn.textContent = isHidden ? "▲ Collapse AP list" : `▼ View all ${count} mesh APs`;
+        btn.setAttribute("aria-expanded", isHidden ? "true" : "false");
+        const count = subRow.querySelectorAll(".mesh-ap-card").length;
+        if (isHidden) {
+          btn.innerHTML = `<span class="subtoggle-icon">▲</span> Collapse AP list`;
+          btn.classList.add("expanded");
+        } else {
+          btn.innerHTML = `<span class="subtoggle-icon">▼</span> View all ${count} mesh APs`;
+          btn.classList.remove("expanded");
+        }
       });
     });
 
@@ -2206,21 +2224,13 @@ async function init(){
     btnGroup.addEventListener("click", () => {
       state.wifiGroupMode = true;
       btnGroup.classList.add("active");
-      btnGroup.style.background = "var(--accent)";
-      btnGroup.style.color = "#0f172a";
       btnAll.classList.remove("active");
-      btnAll.style.background = "transparent";
-      btnAll.style.color = "var(--dim)";
       renderWifiNetworksTable();
     });
     btnAll.addEventListener("click", () => {
       state.wifiGroupMode = false;
       btnAll.classList.add("active");
-      btnAll.style.background = "var(--accent)";
-      btnAll.style.color = "#0f172a";
       btnGroup.classList.remove("active");
-      btnGroup.style.background = "transparent";
-      btnGroup.style.color = "var(--dim)";
       renderWifiNetworksTable();
     });
   }
