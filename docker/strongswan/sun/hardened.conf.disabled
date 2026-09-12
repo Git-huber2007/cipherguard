@@ -1,0 +1,25 @@
+# The target state the remediation engine generates: AEAD, ECP key exchange,
+# bounded lifetimes, IKEv2 only.
+connections {
+    cg-hardened {
+        version = 2
+        proposals = aes256gcm16-prfsha256-ecp256
+        rekey_time = 86400s
+        local_addrs  = 172.30.0.20
+        remote_addrs = 172.30.0.10
+        local  { auth = psk  id = sun.cipherguard.lab }
+        remote { auth = psk  id = sun.cipherguard.lab }
+        children {
+            cg-hardened-child {
+                esp_proposals = aes256gcm16-ecp256
+                rekey_time = 28800s
+                local_ts  = 172.30.0.20/32
+                remote_ts = 172.30.0.10/32
+                start_action = trap
+            }
+        }
+    }
+}
+secrets {
+    ike-hardened { secret = "lab-only-not-a-real-key" }
+}

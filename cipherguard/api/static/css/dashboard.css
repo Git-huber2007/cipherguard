@@ -1,0 +1,774 @@
+/* CipherGuard dashboard styles.
+ *
+ * The colour system carries meaning rather than decoration. Teal marks anything
+ * parsed from cleartext headers; violet marks anything inferred from encrypted
+ * traffic without keys. That pairing is applied identically to the wire ribbon,
+ * the panel tags and the finding badges, so an analyst never has to work out
+ * which claims are measured and which are deduced.
+ */
+
+:root{
+  --paper:#e9edf0;
+  --surface:#ffffff;
+  --sunk:#f3f6f8;
+  --ink:#14212b;
+  --muted:#5a6b78;
+  --faint:#8798a4;
+  --rule:#c3cfd8;
+
+  /* the two epistemic domains, used consistently everywhere */
+  --observed:#1b6e8c;
+  --observed-bg:#e2eff4;
+  --inferred:#6d4e9c;
+  --inferred-bg:#ece5f5;
+
+  --crit:#a81e13;
+  --high:#c05621;
+  --med:#8a6d0f;
+  --low:#3a6b8a;
+  --info:#6b7a86;
+  --ok:#1f6b4a;
+
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.55;
+}
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-0.01em}
+p{margin:0 0 .6rem}
+a{color:var(--observed)}
+
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 72px}
+.visually-hidden{
+  position:absolute;width:1px;height:1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;
+}
+
+/* ---------- masthead ---------- */
+.masthead{
+  border-bottom:1px solid var(--rule);
+  background:var(--surface);
+  margin-bottom:28px;
+}
+.masthead-in{
+  max-width:1180px;margin:0 auto;padding:18px 24px;
+  display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;
+}
+.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
+.brand h1{font-size:1.24rem}
+.brand .ps{
+  font-family:var(--mono);font-size:.72rem;color:var(--muted);
+  border:1px solid var(--rule);border-radius:3px;padding:2px 7px;white-space:nowrap;
+}
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+select,button{font-family:var(--sans);font-size:.88rem}
+select{
+  padding:8px 11px;border:1px solid var(--rule);border-radius:4px;
+  background:var(--surface);color:var(--ink);min-width:210px;
+}
+button{
+  padding:8px 16px;border:1px solid var(--ink);border-radius:4px;
+  background:var(--ink);color:#fff;cursor:pointer;font-weight:500;
+}
+button:hover{background:#22323f}
+button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--rule)}
+button.ghost:hover{background:var(--sunk)}
+button.ghost[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+:focus-visible{outline:2px solid var(--observed);outline-offset:2px}
+
+/* ---------- wire ribbon: the hero ---------- */
+.ribbon-block{margin-bottom:30px}
+.ribbon-lede{max-width:66ch;color:var(--muted);margin-bottom:14px;font-size:.94rem}
+.ribbon-lede strong{color:var(--ink);font-weight:600}
+
+.ribbon{
+  display:flex;align-items:stretch;
+  border:1px solid var(--rule);border-radius:5px;
+  background:var(--surface);overflow:hidden;
+}
+.field{
+  flex:1 1 0;min-width:0;padding:13px 12px 14px;
+  border-right:1px solid var(--rule);
+  cursor:default;transition:background .12s ease;
+}
+.field:last-child{border-right:none}
+.field .fname{
+  font-family:var(--mono);font-size:.73rem;font-weight:600;
+  line-height:1.3;word-break:break-word;
+}
+.field .fval{
+  font-family:var(--mono);font-size:.69rem;color:var(--muted);
+  margin-top:5px;line-height:1.35;word-break:break-word;
+}
+.field.obs{background:var(--observed-bg)}
+.field.obs .fname{color:var(--observed)}
+.field.obs:hover{background:#d5e8ef}
+.field.inf{
+  background:var(--inferred-bg);
+  background-image:repeating-linear-gradient(
+    -45deg,transparent 0 7px,rgba(109,78,156,.10) 7px 14px);
+}
+.field.inf .fname{color:var(--inferred)}
+.field.inf:hover{background-color:#e2d8f0}
+
+/* The seam. Everything left of it is read from the wire; everything right of it
+ * is encrypted and inferred. It is the single most important line here. */
+.seam{
+  flex:0 0 auto;width:0;border-right:3px double var(--ink);
+  position:relative;
+}
+.seam::after{
+  content:"key boundary";
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%) rotate(-90deg);
+  font-family:var(--mono);font-size:.6rem;letter-spacing:.06em;
+  color:var(--ink);background:var(--surface);
+  padding:2px 6px;white-space:nowrap;border-radius:2px;
+}
+
+.ribbon-legend{
+  display:flex;gap:22px;flex-wrap:wrap;margin-top:11px;
+  font-size:.82rem;color:var(--muted);
+}
+.ribbon-legend span{display:flex;align-items:center;gap:7px}
+.swatch{width:12px;height:12px;border-radius:2px;flex:none}
+.swatch.obs{background:var(--observed)}
+.swatch.inf{background:var(--inferred)}
+
+/* ---------- layout ---------- */
+.grid{display:grid;gap:18px}
+.cols-2{grid-template-columns:1fr 1fr}
+.panel{
+  background:var(--surface);border:1px solid var(--rule);
+  border-radius:5px;padding:18px 20px;min-width:0;
+}
+.panel > h2{
+  font-size:.95rem;margin-bottom:3px;
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+}
+.panel > .sub{font-size:.82rem;color:var(--faint);margin-bottom:14px}
+.domain-tag{
+  font-family:var(--mono);font-size:.66rem;font-weight:500;
+  padding:2px 7px;border-radius:3px;white-space:nowrap;
+}
+.domain-tag.obs{background:var(--observed-bg);color:var(--observed)}
+.domain-tag.inf{background:var(--inferred-bg);color:var(--inferred)}
+.domain-tag.inline{margin-left:8px}
+
+/* ---------- score ---------- */
+.scoreline{display:flex;gap:26px;align-items:center;flex-wrap:wrap}
+.dial{flex:none}
+.score-meta{flex:1 1 240px;min-width:0}
+.score-num{font-size:2.1rem;font-weight:600;line-height:1.05;letter-spacing:-.02em}
+.score-sub{color:var(--muted);font-size:.86rem}
+.sev-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.sev-chip{
+  font-family:var(--mono);font-size:.72rem;padding:3px 9px;
+  border-radius:3px;border:1px solid currentColor;
+}
+.sev-chip.critical{color:var(--crit)}
+.sev-chip.high{color:var(--high)}
+.sev-chip.medium{color:var(--med)}
+.sev-chip.low{color:var(--low)}
+.sev-chip.info{color:var(--info)}
+
+.statgrid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+  gap:14px;margin-top:4px;
+}
+.stat .k{font-family:var(--mono);font-size:1.02rem;font-weight:600}
+.stat .l{font-size:.76rem;color:var(--faint);line-height:1.3}
+
+/* ---------- record lists ---------- */
+.rec{padding:13px 0;border-bottom:1px solid var(--rule)}
+.rec:last-child{border-bottom:none;padding-bottom:0}
+.rec:first-of-type{padding-top:0}
+.rec .peers{font-family:var(--mono);font-size:.83rem;font-weight:500;word-break:break-all}
+.rec .meta{font-size:.77rem;color:var(--faint);margin-top:2px}
+.algs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.alg{
+  font-family:var(--mono);font-size:.71rem;padding:2px 7px;
+  border-radius:3px;background:var(--sunk);border:1px solid var(--rule);
+}
+.alg.bad{background:#fbe9e7;border-color:#e8b4ae;color:var(--crit)}
+.alg.warn{background:#fdf3e2;border-color:#e6cfa4;color:var(--high)}
+.alg.good{background:#e4f2eb;border-color:#a8cfbc;color:var(--ok)}
+
+.confbar{height:4px;background:var(--sunk);border-radius:2px;margin-top:9px;overflow:hidden}
+.confbar i{display:block;height:100%;background:var(--inferred)}
+.cand{font-size:.75rem;color:var(--faint);margin-top:6px;font-family:var(--mono);word-break:break-word}
+
+/* ---------- findings ---------- */
+.finding{border-bottom:1px solid var(--rule)}
+.finding:last-child{border-bottom:none}
+.fhead{
+  display:flex;gap:12px;align-items:flex-start;
+  padding:12px 0;cursor:pointer;
+}
+.fhead:hover .ftitle{color:var(--observed)}
+.sev-mark{
+  font-family:var(--mono);font-size:.66rem;font-weight:600;
+  padding:3px 7px;border-radius:3px;color:#fff;flex:none;min-width:64px;text-align:center;
+}
+.sev-mark.critical{background:var(--crit)}
+.sev-mark.high{background:var(--high)}
+.sev-mark.medium{background:var(--med)}
+.sev-mark.low{background:var(--low)}
+.sev-mark.info{background:var(--info)}
+.fmain{flex:1;min-width:0}
+.ftitle{font-weight:500;font-size:.92rem;line-height:1.4}
+.fsub{
+  font-family:var(--mono);font-size:.73rem;color:var(--faint);
+  margin-top:2px;word-break:break-all;
+}
+.fbody{display:none;padding:0 0 16px 76px;max-width:78ch}
+.finding.open .fbody{display:block}
+.fbody p{font-size:.88rem;color:#374b58}
+.fbody .ref{font-family:var(--mono);font-size:.74rem;color:var(--faint)}
+.fix{
+  margin-top:10px;padding:10px 13px;background:var(--sunk);
+  border-radius:4px;font-size:.86rem;
+}
+.fix b{font-weight:600}
+.chev{color:var(--faint);flex:none;font-size:.8rem;margin-top:3px}
+
+/* ---------- post-quantum exposure ---------- */
+.mosca{
+  padding:11px 14px;border-radius:4px;margin-bottom:14px;
+  font-size:.87rem;line-height:1.5;
+}
+.mosca.late{background:#fbe9e7;color:#7d1810;border:1px solid #e8b4ae}
+.mosca.ok{background:#e4f2eb;color:#17513a;border:1px solid #a8cfbc}
+.pql{
+  display:flex;gap:14px;align-items:flex-start;
+  padding:12px 0;border-bottom:1px solid var(--rule);
+}
+.pql:last-child{border-bottom:none;padding-bottom:0}
+.pqrank{
+  font-family:var(--mono);font-size:.8rem;font-weight:600;
+  width:26px;height:26px;border-radius:50%;flex:none;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--sunk);border:1px solid var(--rule);
+}
+.pql.exposed .pqrank{background:var(--inferred-bg);border-color:#c3aede;color:var(--inferred)}
+.pqbody{flex:1;min-width:0}
+.pqpeer{font-family:var(--mono);font-size:.82rem;font-weight:500;word-break:break-all}
+.pqbits{font-size:.78rem;color:var(--muted);margin-top:3px}
+.pqwhy{font-size:.79rem;color:var(--faint);margin-top:5px;max-width:72ch}
+.pqidx{
+  font-family:var(--mono);font-size:.72rem;padding:3px 8px;border-radius:3px;
+  flex:none;white-space:nowrap;
+}
+.pqidx.exposed{background:var(--inferred-bg);color:var(--inferred)}
+.pqidx.safe{background:#e4f2eb;color:var(--ok)}
+.phases{margin-top:18px}
+.phase{padding:12px 0;border-bottom:1px solid var(--rule)}
+.phase:last-child{border-bottom:none}
+.phase h3{font-size:.86rem;margin-bottom:4px}
+.phase p{font-size:.83rem;color:#374b58;max-width:74ch}
+.phase .tgt{font-family:var(--mono);font-size:.75rem;color:var(--observed);margin-top:5px}
+
+/* ---------- remediation ---------- */
+.plat-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+pre{
+  margin:0;padding:15px;background:#12202a;color:#dbe6ec;
+  border-radius:4px;overflow-x:auto;
+  font-family:var(--mono);font-size:.76rem;line-height:1.55;
+  max-height:440px;
+}
+pre .cm{color:#7f97a5}
+
+.empty{color:var(--faint);font-size:.88rem;padding:6px 0}
+.banner{
+  padding:11px 14px;border-radius:4px;margin-bottom:16px;font-size:.87rem;
+  background:#fdf3e2;border:1px solid #e6cfa4;color:#6b4a12;
+}
+.banner[hidden]{display:none}
+footer{margin-top:34px;font-size:.79rem;color:var(--faint);max-width:74ch}
+
+@media (max-width:880px){
+  .cols-2{grid-template-columns:1fr}
+  .ribbon{flex-wrap:wrap}
+  .field{flex:1 1 40%;border-bottom:1px solid var(--rule)}
+  .seam{flex:1 1 100%;width:auto;height:0;border-right:none;border-bottom:3px double var(--ink)}
+  .seam::after{transform:translate(-50%,-50%)}
+  .fbody{padding-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+
+
+/* Informational banner: the static demo is a working state, not a failure,
+   so it must not borrow the error styling. */
+.banner.info{
+  background:var(--observed-bg);
+  border-color:#9dc4d3;
+  color:var(--observed);
+}
+
+/* ---------- Navigation Tabs ---------- */
+.nav-tabs{
+  display:flex;
+  gap:12px;
+  border-bottom:2px solid var(--rule);
+  margin-bottom:24px;
+}
+.tab-btn{
+  background:transparent;
+  border:none;
+  border-bottom:3px solid transparent;
+  color:var(--muted);
+  font-size:1.05rem;
+  font-weight:600;
+  padding:10px 18px;
+  cursor:pointer;
+  border-radius:0;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-bottom:-2px;
+  transition:all .15s ease;
+}
+.tab-btn:hover{
+  background:transparent;
+  color:var(--ink);
+}
+.tab-btn.active{
+  color:var(--ink);
+  border-bottom-color:var(--observed);
+  background:transparent;
+}
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.live-dot{
+  width:10px;height:10px;border-radius:50%;background:#22c55e;
+  box-shadow:0 0 0 0 rgba(34,197,94,0.7);
+  animation:pulse-green 2s infinite;
+}
+@keyframes pulse-green{
+  0%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(34,197,94,0.7);}
+  70%{transform:scale(1);box-shadow:0 0 0 6px rgba(34,197,94,0);}
+  100%{transform:scale(0.95);box-shadow:0 0 0 0 rgba(34,197,94,0);}
+}
+
+/* ---------- Wi-Fi Hero Card ---------- */
+.wifi-hero-card{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-left:4px solid var(--observed);
+  border-radius:6px;
+  padding:20px 24px;
+  margin-bottom:22px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:16px;
+}
+.wifi-status-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-family:var(--mono);
+  font-size:.78rem;
+  font-weight:600;
+  color:#15803d;
+  background:#dcfce7;
+  padding:3px 8px;
+  border-radius:4px;
+  margin-bottom:8px;
+}
+.wifi-status-badge.disconnected{
+  color:#b91c1c;
+  background:#fee2e2;
+}
+.pulse-indicator{
+  width:8px;height:8px;border-radius:50%;background:currentColor;
+}
+.wifi-ssid-title{
+  font-size:1.6rem;
+  color:var(--ink);
+  margin-bottom:6px;
+}
+.wifi-meta-row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  font-size:.88rem;
+  color:var(--muted);
+}
+.wifi-meta-row b{color:var(--ink)}
+.wifi-hero-actions{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:6px;
+}
+.action-btn{
+  background:var(--observed);
+  border-color:var(--observed);
+  color:#fff;
+  padding:9px 18px;
+  font-size:.92rem;
+  border-radius:4px;
+  cursor:pointer;
+  font-weight:600;
+}
+.action-btn:hover{
+  background:#14556d;
+}
+.wifi-time-sub{
+  font-size:.78rem;
+  color:var(--faint);
+  font-family:var(--mono);
+}
+
+/* ---------- Wi-Fi Health List ---------- */
+.wifi-health-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:14px;
+}
+.health-item{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:10px 14px;
+  background:var(--sunk);
+  border-radius:5px;
+  border:1px solid #e2e8f0;
+}
+.health-label{
+  font-size:.88rem;
+  color:var(--muted);
+  font-weight:500;
+}
+.health-val{
+  font-family:var(--mono);
+  font-size:.88rem;
+  font-weight:600;
+  color:var(--ink);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.signal-bar-track{
+  width:80px;height:7px;background:#cbd5e1;border-radius:4px;overflow:hidden;
+}
+.signal-bar-fill{
+  height:100%;background:var(--ok);border-radius:4px;transition:width .3s;
+}
+
+/* ---------- Data Table ---------- */
+.table-responsive{overflow-x:auto}
+.data-table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:.88rem;
+  margin-top:12px;
+}
+.data-table th{
+  text-align:left;
+  padding:10px 12px;
+  background:var(--sunk);
+  border-bottom:2px solid var(--rule);
+  color:var(--muted);
+  font-weight:600;
+  font-size:.8rem;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.data-table td{
+  padding:12px;
+  border-bottom:1px solid #e2e8f0;
+  vertical-align:middle;
+}
+.data-table tr.active-net{
+  background:#f0fdf4;
+}
+.data-table tr:hover{
+  background:#f8fafc;
+}
+.grade-badge{
+  display:inline-block;
+  font-family:var(--mono);
+  font-size:.78rem;
+  font-weight:700;
+  padding:2px 8px;
+  border-radius:4px;
+  text-align:center;
+}
+.grade-badge.A\, .grade-badge.A\+{background:#dcfce7;color:#166534}
+.grade-badge.B{background:#fef9c3;color:#854d0e}
+.grade-badge.D{background:#ffedd5;color:#9a3412}
+.grade-badge.F{background:#fee2e2;color:#991b1b}
+
+/* ---------- VPN Overlay & Tunnel Card ---------- */
+.vpn-overlay-panel{
+  border-left: 4px solid #3b82f6;
+}
+.vpn-panel-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.vpn-status-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.vpn-status-active{
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+.vpn-status-active .vpn-dot{
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+  animation: vpnPulse 2s infinite;
+}
+.vpn-status-inactive{
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.vpn-status-inactive .vpn-dot{
+  background: #94a3b8;
+}
+.vpn-dot{
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+@keyframes vpnPulse{
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+.vpn-detail-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.vpn-metric-box{
+  background: var(--sunk);
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vpn-metric-title{
+  font-size: .75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+.vpn-metric-value{
+  font-family: var(--mono);
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.vpn-metric-sub{
+  font-size: .78rem;
+  color: var(--faint);
+}
+
+.vpn-architecture-note{
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  font-size: .83rem;
+  color: #1e40af;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.45;
+}
+.vpn-info-icon{
+  font-size: 1.1rem;
+  font-weight: bold;
+}
+
+/* ---------------------------------- Remediation & Playbook Engine Styles */
+.remediation-panel{
+  border-left: 4px solid #10b981;
+}
+.remediation-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.playbook-toolbar{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  background: var(--sunk);
+  border: 1px solid #dfe7ec;
+  border-radius: 6px;
+}
+.playbook-view-tabs{
+  display: flex;
+  gap: 6px;
+}
+.playbook-tab{
+  padding: 6px 12px;
+  border: 1px solid #cad5df;
+  background: #fff;
+  border-radius: 4px;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all .15s ease;
+}
+.playbook-tab:hover{
+  background: #f1f5f9;
+}
+.playbook-tab.active{
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.playbook-meta-chips{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.playbook-chip{
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: .75rem;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+.chip-ok{
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+.chip-err{
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+.chip-status{
+  background: #f8fafc;
+  color: #334155;
+  border: 1px solid #cbd5e1;
+}
+.chip-status.approved{
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+.chip-status.staged{
+  background: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+.playbook-actions{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.solid-btn{
+  background: #0284c7;
+  color: #fff;
+  border: 1px solid #0284c7;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: .8rem;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.solid-btn:hover{
+  background: #0369a1;
+}
+.solid-btn:disabled{
+  opacity: .5;
+  cursor: not-allowed;
+}
+.playbook-sim-box{
+  background: #0b1320;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-family: var(--mono);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.sim-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 6px;
+  color: #38bdf8;
+  font-size: .85rem;
+}
+.ghost-mini{
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.ghost-mini:hover{
+  color: #fff;
+}
+.playbook-pre{
+  background: #0a0e14;
+  color: #e2e8f0;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 16px;
+  font-family: var(--mono);
+  font-size: .82rem;
+  line-height: 1.45;
+  max-height: 500px;
+  overflow-y: auto;
+  white-space: pre;
+}

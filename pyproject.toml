@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cipherguard"
+version = "1.0.0"
+description = "Passive IPsec VPN protocol analyzer and security assessment framework"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scikit-learn>=1.3",
+    "joblib>=1.3",
+]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.0", "python-multipart>=0.0.9"]
+dev = ["pytest>=7.4"]
+
+[project.scripts]
+cipherguard = "cipherguard.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cipherguard*"]
+
+[tool.setuptools.package-data]
+"cipherguard.api" = ["static/*.html", "static/css/*.css", "static/js/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["no_model: test does not need the session-trained inference model"]

@@ -1,0 +1,9 @@
+{
+  "name": "Example agency crypto directive",
+  "reference": "AGENCY-CRYPTO-DIR-2026/03",
+  "MIN_DH_BITS": 3072,
+  "MAX_IKE_SA_LIFETIME": 28800,
+  "DH_PROHIBITED": {
+    "14": "2048-bit MODP is below this directive's 3072-bit floor"
+  }
+}

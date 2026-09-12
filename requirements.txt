@@ -1,0 +1,14 @@
+# Core analysis path. The dissector, ESP tracker and pcap reader are pure
+# Python and need none of these — only the model and the dashboard do.
+numpy>=1.24
+scikit-learn>=1.3
+joblib>=1.3
+
+# Dashboard and REST API
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.0
+python-multipart>=0.0.9   # optional: capture upload endpoint only
+
+# Tests
+pytest>=7.4

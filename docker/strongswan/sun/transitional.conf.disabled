@@ -1,0 +1,23 @@
+# Partially modernised: IKEv2 and AES, but CBC without AEAD and SHA-1 integrity.
+connections {
+    cg-transitional {
+        version = 2
+        proposals = aes128-sha1-modp2048
+        rekey_time = 86400s
+        local_addrs  = 172.30.0.20
+        remote_addrs = 172.30.0.10
+        local  { auth = psk  id = sun.cipherguard.lab }
+        remote { auth = psk  id = sun.cipherguard.lab }
+        children {
+            cg-transitional-child {
+                esp_proposals = aes128-sha1
+                local_ts  = 172.30.0.20/32
+                remote_ts = 172.30.0.10/32
+                start_action = trap
+            }
+        }
+    }
+}
+secrets {
+    ike-transitional { secret = "lab-only-not-a-real-key" }
+}
