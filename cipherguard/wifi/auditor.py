@@ -189,6 +189,7 @@ class WifiAuditor:
 
         # 4. Rogue AP / Evil Twin Analysis
         # Check if another BSSID exists in range with identical SSID but differing security or signal
+        rogue_aps: list[dict] = []
         matching_ssids = [n for n in networks if n.ssid.lower() == interface_info.ssid.lower()]
         if len(matching_ssids) > 1:
             diff_security = [
@@ -196,6 +197,22 @@ class WifiAuditor:
             ]
             if diff_security:
                 score -= 35
+                for rog in diff_security:
+                    rog.is_rogue = True
+                    rog.rogue_reason = f"Evil Twin Clone ({rog.authentication} vs {interface_info.authentication})"
+                    rogue_aps.append({
+                        "ssid": rog.ssid,
+                        "bssid": rog.bssid,
+                        "band": rog.band,
+                        "channel": rog.channel,
+                        "signal_percent": rog.signal_percent,
+                        "authentication": rog.authentication,
+                        "encryption": rog.encryption,
+                        "reason": f"Downgraded Security: Clone operates under {rog.authentication} while legitimate network enforces {interface_info.authentication}",
+                        "target_ssid": interface_info.ssid,
+                        "threat_level": "critical",
+                    })
+
                 findings.append(
                     SecurityFinding(
                         severity="critical",
@@ -219,6 +236,26 @@ class WifiAuditor:
                         reference="IEEE 802.11r-2008",
                     )
                 )
+
+        # Also detect any open clones of any other protected network in range
+        protected_ssids = {n.ssid.lower(): n.authentication for n in networks if "WPA" in n.authentication.upper()}
+        for net in networks:
+            if not net.is_rogue and net.ssid and net.ssid.lower() in protected_ssids:
+                if "OPEN" in net.authentication.upper() or "NONE" in net.encryption.upper():
+                    net.is_rogue = True
+                    net.rogue_reason = f"Open Clone of Protected Network ({protected_ssids[net.ssid.lower()]})"
+                    rogue_aps.append({
+                        "ssid": net.ssid,
+                        "bssid": net.bssid,
+                        "band": net.band,
+                        "channel": net.channel,
+                        "signal_percent": net.signal_percent,
+                        "authentication": net.authentication,
+                        "encryption": net.encryption,
+                        "reason": f"Open clone of protected network ({protected_ssids[net.ssid.lower()]})",
+                        "target_ssid": net.ssid,
+                        "threat_level": "high",
+                    })
 
         # 5. DNS Security & Leak Audit
         dns_servers = (dns_info or {}).get("dns_servers", [])
@@ -281,6 +318,7 @@ class WifiAuditor:
             findings=findings,
             summary=summary,
             dns_posture=dns_info or {},
+            rogue_aps=rogue_aps,
         )
 
     # -- Windows Native Parsers --------------------------------------------

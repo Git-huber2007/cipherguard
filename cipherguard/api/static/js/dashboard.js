@@ -19,7 +19,11 @@ const state = {
   currentWifiNetworks: [], // cached list of WifiNetwork items
   wifiAssessment: null,    // latest live wifi & vpn assessment payload
   sessionStartTime: Date.now(),
-  telemetryTicks: 0
+  telemetryTicks: 0,
+  simulatedRogueApActive: false, // interactive rogue AP evil twin simulation toggle
+  ipsecMode: "single",     // "single" or "diff"
+  diffAssessmentA: null,   // baseline capture A assessment
+  diffAssessmentB: null    // hardened capture B assessment
 };
 
 /* ---------------------------------------------------------------- helpers */
@@ -130,7 +134,9 @@ const DEFAULT_RIBBON = [
   {d:"inf", n:"ESP ciphertext",   v:"suite inferred from framing"}
 ];
 
-function renderRibbon(a){
+function renderRibbonTo(targetId, a){
+  const el = $(targetId);
+  if (!el) return;
   const parts = DEFAULT_RIBBON.map(f => Object.assign({}, f));
   if (a){
     const s = a.sessions && a.sessions[0];
@@ -148,13 +154,17 @@ function renderRibbon(a){
         + `(${Math.round((f.framing_confidence ?? f.confidence ?? 0) * 100)}%)`;
     }
   }
-  $("ribbon").innerHTML = parts.map(f =>
+  el.innerHTML = parts.map(f =>
     f.d === "seam"
       ? `<div class="seam" aria-hidden="true"></div>`
       : `<div class="field ${f.d}">`
       + `<div class="fname">${esc(f.n)}</div>`
       + `<div class="fval">${esc(f.v)}</div></div>`
   ).join("");
+}
+
+function renderRibbon(a){
+  renderRibbonTo("ribbon", a);
 }
 
 /* --------------------------------------------------------------- panels */
@@ -499,41 +509,78 @@ async function detectStaticMode(){
   }
 }
 
-async function loadCapturesStatic(){
+function populateCaptureSelects(items){
   const sel = $("capture");
-  const caps = staticMode.manifest.captures || [];
-  if (!caps.length){
-    sel.innerHTML = `<option value="">No captures in this build</option>`;
-    $("run").disabled = true;
-    return;
-  }
-  sel.innerHTML = caps.map(c =>
+  const selA = $("diff-capture-a");
+  const selB = $("diff-capture-b");
+
+  const optsHtml = items.map(c =>
     `<option value="${esc(c.name)}">${esc(c.name)} — ${c.size_kb} KB</option>`
   ).join("");
+
+  if (sel) sel.innerHTML = optsHtml;
+  if (selA) selA.innerHTML = optsHtml;
+  if (selB) selB.innerHTML = optsHtml;
+
+  // Set smart default diff selection
+  if (selA && selB && items.length >= 2){
+    const downgrade = items.find(c => /downgrade|legacy/i.test(c.name));
+    if (downgrade) selA.value = downgrade.name;
+    else selA.selectedIndex = 0;
+
+    const hardened = items.find(c => /hardened|backbone/i.test(c.name));
+    if (hardened) selB.value = hardened.name;
+    else selB.selectedIndex = Math.min(items.length - 1, 1);
+  }
+}
+
+async function loadCapturesStatic(){
+  const caps = staticMode.manifest.captures || [];
+  if (!caps.length){
+    if ($("capture")) $("capture").innerHTML = `<option value="">No captures in this build</option>`;
+    if ($("run")) $("run").disabled = true;
+    return;
+  }
+  populateCaptureSelects(caps);
   showBanner("Static demo: analyses were pre-computed by the real pipeline. "
              + "Install CipherGuard to assess your own captures.", "info");
 }
 
 async function loadCaptures(){
   if (await detectStaticMode()) return loadCapturesStatic();
-  const sel = $("capture");
   try{
     const {captures} = await (await api("/api/captures")).json();
     if (!captures.length){
-      sel.innerHTML = `<option value="">No captures found</option>`;
-      $("run").disabled = true;
+      if ($("capture")) $("capture").innerHTML = `<option value="">No captures found</option>`;
+      if ($("run")) $("run").disabled = true;
       showBanner("No capture files found. Generate the reference set with: "
                  + "cipherguard lab");
       return;
     }
-    sel.innerHTML = captures.map(c =>
-      `<option value="${esc(c.name)}">${esc(c.name)} — ${c.size_kb} KB</option>`
-    ).join("");
+    populateCaptureSelects(captures);
     showBanner(null);
   }catch(err){
-    sel.innerHTML = `<option value="">Backend unreachable</option>`;
-    $("run").disabled = true;
+    if ($("capture")) $("capture").innerHTML = `<option value="">Backend unreachable</option>`;
+    if ($("run")) $("run").disabled = true;
     showBanner("Could not reach the CipherGuard API: " + err.message);
+  }
+}
+
+async function fetchAssessment(name){
+  if (!name) throw new Error("No capture selected.");
+  if (staticMode.active){
+    const entry = (staticMode.manifest.captures || []).find(c => c.name === name);
+    if (!entry) throw new Error("no pre-computed analysis for " + name);
+    const res = await fetch(entry.file, {cache: "no-store"});
+    if (!res.ok) throw new Error("could not load " + entry.file);
+    return await res.json();
+  } else {
+    const res = await api("/api/analyze", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({capture: name})
+    });
+    return await res.json();
   }
 }
 
@@ -544,21 +591,7 @@ async function runAnalysis(){
   btn.disabled = true;
   btn.textContent = "Assessing…";
   try{
-    if (staticMode.active){
-      const entry = (staticMode.manifest.captures || [])
-        .find(c => c.name === name);
-      if (!entry) throw new Error("no pre-computed analysis for " + name);
-      const res = await fetch(entry.file, {cache: "no-store"});
-      if (!res.ok) throw new Error("could not load " + entry.file);
-      state.assessment = await res.json();
-    } else {
-      const res = await api("/api/analyze", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({capture: name})
-      });
-      state.assessment = await res.json();
-    }
+    state.assessment = await fetchAssessment(name);
     renderScore(state.assessment);
     renderSessions(state.assessment);
     renderFlows(state.assessment);
@@ -573,6 +606,337 @@ async function runAnalysis(){
   }finally{
     btn.disabled = false;
     btn.textContent = "Assess capture";
+  }
+}
+
+function switchIpsecMode(mode){
+  state.ipsecMode = mode;
+  const singleBtn = $("btn-ipsec-single");
+  const diffBtn = $("btn-ipsec-diff");
+  const singleControls = $("ipsec-single-controls");
+  const diffControls = $("ipsec-diff-controls");
+  const singleView = $("ipsec-single-view");
+  const diffView = $("ipsec-diff-view");
+
+  if (mode === "diff"){
+    if (singleBtn) singleBtn.classList.remove("active");
+    if (diffBtn) diffBtn.classList.add("active");
+    if (singleControls) singleControls.style.display = "none";
+    if (diffControls) diffControls.style.display = "flex";
+    if (singleView) singleView.style.display = "none";
+    if (diffView) diffView.style.display = "block";
+
+    // Auto-run diff if not already analyzed
+    if (!state.diffAssessmentA || !state.diffAssessmentB){
+      runDiffAnalysis();
+    }
+  } else {
+    if (singleBtn) singleBtn.classList.add("active");
+    if (diffBtn) diffBtn.classList.remove("active");
+    if (singleControls) singleControls.style.display = "flex";
+    if (diffControls) diffControls.style.display = "none";
+    if (singleView) singleView.style.display = "block";
+    if (diffView) diffView.style.display = "none";
+  }
+}
+
+function extractSuiteInfo(assessment){
+  if (!assessment) return {};
+  const s = (assessment.sessions && assessment.sessions[0]) || null;
+  let ikeVersion = "None observed";
+  let ikeCipher = "None / Cleartext";
+  let ikePrf = "None";
+  let dhGroup = "None";
+  let dhVal = 0;
+
+  if (s){
+    ikeVersion = s.version || "IKEv1";
+    const prop = pickIkeProposal(s);
+    if (prop && prop.transforms){
+      const enc = prop.transforms.find(t => t.type_id === 1 || /^ENCR_/.test(t.name));
+      if (enc) ikeCipher = pretty(enc);
+      const prf = prop.transforms.find(t => t.type_id === 2 || /^PRF_/.test(t.name));
+      const auth = prop.transforms.find(t => t.type_id === 3 || /^AUTH_/.test(t.name));
+      if (prf) ikePrf = pretty(prf);
+      else if (auth) ikePrf = pretty(auth);
+      const dh = prop.transforms.find(t => t.type_id === 4);
+      if (dh){
+        dhGroup = pretty(dh);
+        dhVal = dh.value_id;
+      }
+    }
+  }
+
+  const f = (assessment.flows && assessment.flows[0]) || null;
+  let espSuite = "None observed";
+  let espClass = "none";
+  if (f){
+    espSuite = f.framing_class || f.predicted_suite || "Unresolved";
+    espClass = f.framing_class || "";
+  }
+
+  const pq = assessment.roadmap;
+  const pqSafe = pq && pq.links && pq.links.length > 0 && pq.links.every(l => l.quantum_safe);
+  const pqCount = (pq && pq.links && pq.links.filter(l => !l.quantum_safe).length) || 0;
+
+  return {
+    ikeVersion,
+    ikeCipher,
+    ikePrf,
+    dhGroup,
+    dhVal,
+    espSuite,
+    espClass,
+    pqSafe,
+    pqCount
+  };
+}
+
+async function runDiffAnalysis(){
+  const selA = $("diff-capture-a");
+  const selB = $("diff-capture-b");
+  const nameA = selA ? selA.value : "";
+  const nameB = selB ? selB.value : "";
+  if (!nameA || !nameB) return;
+
+  const btn = $("run-diff");
+  if (btn){
+    btn.disabled = true;
+    btn.textContent = "Comparing…";
+  }
+
+  try{
+    const [a, b] = await Promise.all([fetchAssessment(nameA), fetchAssessment(nameB)]);
+    state.diffAssessmentA = a;
+    state.diffAssessmentB = b;
+    renderDiffView(a, b);
+  }catch(err){
+    alert("Differential analysis failed: " + err.message);
+  }finally{
+    if (btn){
+      btn.disabled = false;
+      btn.textContent = "Run Diff Comparison";
+    }
+  }
+}
+
+function renderDiffView(a, b){
+  if (!a || !b) return;
+
+  const scoreA = a.score ?? 0;
+  const scoreB = b.score ?? 0;
+  const delta = scoreB - scoreA;
+
+  // 1. Delta Hero Badge
+  const badge = $("diff-delta-badge");
+  const deltaNum = $("diff-delta-num");
+  if (badge && deltaNum){
+    if (delta > 0){
+      badge.className = "diff-delta-badge positive";
+      deltaNum.textContent = `+${delta}`;
+    } else if (delta < 0){
+      badge.className = "diff-delta-badge negative";
+      deltaNum.textContent = `${delta}`;
+    } else {
+      badge.className = "diff-delta-badge neutral";
+      deltaNum.textContent = `0`;
+    }
+  }
+
+  // 2. Summary Cards
+  if ($("diff-name-a")) $("diff-name-a").textContent = a.capture || "Baseline";
+  if ($("diff-score-a")) $("diff-score-a").textContent = `${scoreA}/100`;
+  const gradeAEl = $("diff-grade-a");
+  if (gradeAEl){
+    gradeAEl.textContent = `Grade ${a.grade || "—"}`;
+    gradeAEl.className = `diff-grade-pill grade-badge ${a.grade ? a.grade.replace("+", "") : "B"}`;
+  }
+  if ($("diff-sevs-a")){
+    $("diff-sevs-a").innerHTML = ["critical", "high", "medium", "low"]
+      .filter(k => a.counts && a.counts[k])
+      .map(k => `<span class="sev-chip ${k}" style="font-size:0.68rem;padding:1px 5px">${a.counts[k]} ${k}</span>`)
+      .join(" ") || `<span class="sev-chip info" style="font-size:0.68rem">Clean</span>`;
+  }
+  if ($("diff-meta-a")){
+    $("diff-meta-a").innerHTML = `
+      <div style="font-size:0.75rem;color:var(--muted)">
+        ${(a.sessions || []).length} IKE Sessions &middot; ${(a.flows || []).length} ESP SAs &middot; ${(a.findings || []).length} Vulnerabilities
+      </div>
+    `;
+  }
+
+  if ($("diff-name-b")) $("diff-name-b").textContent = b.capture || "Hardened";
+  if ($("diff-score-b")) $("diff-score-b").textContent = `${scoreB}/100`;
+  const gradeBEl = $("diff-grade-b");
+  if (gradeBEl){
+    gradeBEl.textContent = `Grade ${b.grade || "—"}`;
+    gradeBEl.className = `diff-grade-pill grade-badge ${b.grade ? b.grade.replace("+", "") : "B"}`;
+  }
+  if ($("diff-sevs-b")){
+    $("diff-sevs-b").innerHTML = ["critical", "high", "medium", "low"]
+      .filter(k => b.counts && b.counts[k])
+      .map(k => `<span class="sev-chip ${k}" style="font-size:0.68rem;padding:1px 5px">${b.counts[k]} ${k}</span>`)
+      .join(" ") || `<span class="sev-chip info" style="font-size:0.68rem">Clean</span>`;
+  }
+  if ($("diff-meta-b")){
+    $("diff-meta-b").innerHTML = `
+      <div style="font-size:0.75rem;color:var(--muted)">
+        ${(b.sessions || []).length} IKE Sessions &middot; ${(b.flows || []).length} ESP SAs &middot; ${(b.findings || []).length} Vulnerabilities
+      </div>
+    `;
+  }
+
+  const verdictEl = $("diff-transform-verdict");
+  const statDeltaEl = $("diff-stat-delta");
+  if (verdictEl && statDeltaEl){
+    if (delta > 0){
+      verdictEl.innerHTML = `<span style="color:#059669">&#9650; Hardened (+${delta} Pts)</span>`;
+      statDeltaEl.textContent = `Security posture upgraded from Grade ${a.grade} to ${b.grade}`;
+    } else if (delta < 0){
+      verdictEl.innerHTML = `<span style="color:#dc2626">&#9660; Degraded (${delta} Pts)</span>`;
+      statDeltaEl.textContent = `Security posture regressed from Grade ${a.grade} to ${b.grade}`;
+    } else {
+      verdictEl.innerHTML = `<span style="color:var(--muted)">Parity (0 Pts)</span>`;
+      statDeltaEl.textContent = `Both captures exhibit equivalent security posture`;
+    }
+  }
+
+  // 3. Side-by-Side Wire Ribbons
+  if ($("diff-ribbon-title-a")) $("diff-ribbon-title-a").textContent = a.capture || "Baseline";
+  if ($("diff-ribbon-title-b")) $("diff-ribbon-title-b").textContent = b.capture || "Hardened";
+  renderRibbonTo("diff-ribbon-a", a);
+  renderRibbonTo("diff-ribbon-b", b);
+
+  // 4. Cryptographic Upgrade Matrix
+  const infoA = extractSuiteInfo(a);
+  const infoB = extractSuiteInfo(b);
+
+  const matrixRows = [
+    {
+      param: "IKE Protocol Version",
+      valA: infoA.ikeVersion,
+      valB: infoB.ikeVersion,
+      status: (infoA.ikeVersion === "IKEv1" && infoB.ikeVersion === "IKEv2")
+        ? { text: "✔ UPGRADED (IKEv2)", cls: "diff-status-upgraded" }
+        : infoA.ikeVersion === infoB.ikeVersion
+          ? { text: "— Parity", cls: "diff-status-same" }
+          : { text: "✔ Modernized", cls: "diff-status-upgraded" }
+    },
+    {
+      param: "IKE SA Cipher Suite",
+      valA: infoA.ikeCipher,
+      valB: infoB.ikeCipher,
+      status: (BAD.test(infoA.ikeCipher) && !BAD.test(infoB.ikeCipher))
+        ? { text: "✔ HARDENED (AEAD)", cls: "diff-status-upgraded" }
+        : infoA.ikeCipher === infoB.ikeCipher
+          ? { text: "— Unchanged", cls: "diff-status-same" }
+          : { text: "✔ Upgraded", cls: "diff-status-upgraded" }
+    },
+    {
+      param: "Integrity & PRF Algorithm",
+      valA: infoA.ikePrf,
+      valB: infoB.ikePrf,
+      status: ((BAD_HASH.test(infoA.ikePrf) || WEAK_HASH.test(infoA.ikePrf)) && !WEAK_HASH.test(infoB.ikePrf) && !BAD_HASH.test(infoB.ikePrf))
+        ? { text: "✔ SECURED (SHA-2/3)", cls: "diff-status-upgraded" }
+        : infoA.ikePrf === infoB.ikePrf
+          ? { text: "— Unchanged", cls: "diff-status-same" }
+          : { text: "✔ Upgraded", cls: "diff-status-upgraded" }
+    },
+    {
+      param: "Diffie-Hellman Group",
+      valA: infoA.dhGroup,
+      valB: infoB.dhGroup,
+      status: ([1, 2, 5, 22, 25].includes(infoA.dhVal) && ![1, 2, 5, 22, 25].includes(infoB.dhVal) && infoB.dhVal > 0)
+        ? { text: "✔ RESILIENT (High DH)", cls: "diff-status-upgraded" }
+        : infoA.dhGroup === infoB.dhGroup
+          ? { text: "— Parity", cls: "diff-status-same" }
+          : { text: "✔ Modern Group", cls: "diff-status-upgraded" }
+    },
+    {
+      param: "ESP Framing & Tunnel Suite",
+      valA: infoA.espSuite,
+      valB: infoB.espSuite,
+      status: (/64-bit|3?DES|NULL|unencrypted/i.test(infoA.espSuite) && !/64-bit|3?DES|NULL/i.test(infoB.espSuite))
+        ? { text: "✔ SECURE TUNNEL", cls: "diff-status-upgraded" }
+        : infoA.espSuite === infoB.espSuite
+          ? { text: "— Parity", cls: "diff-status-same" }
+          : { text: "✔ Hardened", cls: "diff-status-upgraded" }
+    },
+    {
+      param: "Post-Quantum Exposure (PQC)",
+      valA: infoA.pqSafe ? "Zero Exposed Links" : `${infoA.pqCount} Links Exposed to HNDL`,
+      valB: infoB.pqSafe ? "Zero Exposed Links (PQC Safe)" : `${infoB.pqCount} Links Exposed`,
+      status: (!infoA.pqSafe && infoB.pqSafe)
+        ? { text: "✔ PQC READY", cls: "diff-status-upgraded" }
+        : (infoB.pqCount < infoA.pqCount)
+          ? { text: "✔ Exposure Reduced", cls: "diff-status-upgraded" }
+          : { text: "— Maintained", cls: "diff-status-same" }
+    }
+  ];
+
+  const tbody = $("diff-matrix-tbody");
+  if (tbody){
+    tbody.innerHTML = matrixRows.map(row => `
+      <tr>
+        <td><b>${esc(row.param)}</b></td>
+        <td><code>${esc(row.valA)}</code></td>
+        <td><code>${esc(row.valB)}</code></td>
+        <td style="text-align:center"><span class="${row.status.cls}">${esc(row.status.text)}</span></td>
+      </tr>
+    `).join("");
+  }
+
+  // 5. Vulnerability Resolution & Risk Elimination
+  const findingsA = a.findings || [];
+  const findingsB = b.findings || [];
+
+  const bRules = new Set(findingsB.map(f => f.rule_id));
+  const bTitles = new Set(findingsB.map(f => f.title));
+
+  const resolved = findingsA.filter(f => !bRules.has(f.rule_id) && !bTitles.has(f.title));
+  const persisting = findingsB.filter(f => findingsA.some(fa => fa.rule_id === f.rule_id || fa.title === f.title));
+  const newInB = findingsB.filter(f => !findingsA.some(fa => fa.rule_id === f.rule_id || fa.title === f.title));
+
+  if ($("diff-resolved-count")) $("diff-resolved-count").textContent = resolved.length;
+  if ($("diff-persisting-count")) $("diff-persisting-count").textContent = persisting.length + newInB.length;
+
+  const resList = $("diff-resolved-list");
+  if (resList){
+    if (resolved.length === 0){
+      resList.innerHTML = `<div class="empty">Zero findings were resolved between these two captures.</div>`;
+    } else {
+      resList.innerHTML = resolved.map(f => `
+        <div class="diff-finding-card resolved">
+          <div class="title">
+            <span style="color:#059669">&#10004;</span>
+            <span>${esc(f.title)}</span>
+            <span class="sev-chip ${f.severity.toLowerCase()}" style="font-size:0.65rem;padding:0 5px">${esc(f.severity)}</span>
+          </div>
+          <div class="meta">${esc(f.rule_id)} &middot; ${esc(f.subject)}</div>
+          <div class="fix"><b>Remediation Confirmed:</b> Vulnerability eliminated in hardened configuration.</div>
+        </div>
+      `).join("");
+    }
+  }
+
+  const persistList = $("diff-persisting-list");
+  if (persistList){
+    const remaining = [...persisting, ...newInB];
+    if (remaining.length === 0){
+      persistList.innerHTML = `<div class="empty" style="color:#059669;font-weight:600">&#10004; Zero security vulnerabilities remaining in hardened capture!</div>`;
+    } else {
+      persistList.innerHTML = remaining.map(f => `
+        <div class="diff-finding-card persisting">
+          <div class="title">
+            <span style="color:#d97706">&#9888;</span>
+            <span>${esc(f.title)}</span>
+            <span class="sev-chip ${f.severity.toLowerCase()}" style="font-size:0.65rem;padding:0 5px">${esc(f.severity)}</span>
+          </div>
+          <div class="meta">${esc(f.rule_id)} &middot; ${esc(f.subject)}</div>
+          <div class="fix" style="color:#b45309"><b>Action:</b> ${esc(f.remediation || "Review vendor playbook")}</div>
+        </div>
+      `).join("");
+    }
   }
 }
 
@@ -1710,8 +2074,84 @@ async function loadWifiAssessment(forceScan = false){
     const demo = getStaticWifiDemoData();
     data.networks_in_range = demo.networks_in_range || [];
     if (!data.interface) data.interface = demo.interface;
+    if (!data.rogue_aps) data.rogue_aps = demo.rogue_aps || [];
   }
   const iface = data.interface;
+
+  let networks = (data.networks_in_range || []).map(n => Object.assign({}, n));
+  let rogueList = (data.rogue_aps || []).map(r => Object.assign({}, r));
+
+  // If user requested simulated Evil Twin AP attack, inject realistic clone AP into live view
+  if (state.simulatedRogueApActive) {
+    const activeSsid = (iface && iface.ssid) ? iface.ssid : "Svyasa-Student";
+    const simRogue = {
+      ssid: activeSsid,
+      bssid: "58:61:63:de:ad:01",
+      signal_percent: 96,
+      rssi_dbm: -38,
+      channel: (iface && iface.channel) ? iface.channel : 44,
+      band: (iface && iface.band) ? iface.band : "5 GHz",
+      radio_type: "802.11ax",
+      authentication: "Open",
+      encryption: "None",
+      security_grade: "F",
+      connected: false,
+      is_rogue: true,
+      rogue_reason: `Open / Unencrypted clone of secured WPA2 network '${activeSsid}' (Classic Evil Twin MitM honeypot)`
+    };
+    if (!networks.some(n => n.bssid === simRogue.bssid)){
+      networks.unshift(simRogue);
+    }
+    if (!rogueList.some(r => r.bssid === simRogue.bssid)){
+      rogueList.unshift({
+        ssid: simRogue.ssid,
+        bssid: simRogue.bssid,
+        channel: simRogue.channel,
+        signal: `${simRogue.signal_percent}% (${simRogue.rssi_dbm} dBm)`,
+        threat_level: "CRITICAL",
+        reason: simRogue.rogue_reason
+      });
+    }
+  }
+
+  // Render or hide the Evil Twin Alert Banner
+  const banner = $("wifi-evil-twin-banner");
+  if (banner) {
+    if (rogueList.length > 0) {
+      banner.style.display = "flex";
+      const primaryRogue = rogueList[0];
+      const descEl = $("evil-twin-desc");
+      if (descEl) {
+        descEl.innerHTML = `An active rogue clone of network <strong>"${esc(primaryRogue.ssid)}"</strong> was detected broadcasting at high RF power. Rogue access points advertise legitimate SSIDs with downgraded security to entice victim devices to connect, exposing all cleartext data, session cookies, and login credentials to an active Man-In-The-Middle (MitM) adversary.`;
+      }
+      const pillsEl = $("evil-twin-pills");
+      if (pillsEl) {
+        pillsEl.innerHTML = `
+          <span class="evil-twin-pill">Target SSID: <strong>${esc(primaryRogue.ssid)}</strong></span>
+          <span class="evil-twin-pill">Rogue BSSID: <code>${esc(primaryRogue.bssid)}</code></span>
+          <span class="evil-twin-pill">Security: <b>Open (No Encryption)</b></span>
+          <span class="evil-twin-pill">Signal: <b>${esc(primaryRogue.signal || '96% (-38 dBm)')}</b></span>
+          <span class="evil-twin-pill">Threat Type: <b>Evil Twin Clone</b></span>
+        `;
+      }
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  // Update simulation toggle button state
+  const simBtn = $("wifi-simulate-evil-twin");
+  if (simBtn) {
+    if (state.simulatedRogueApActive) {
+      simBtn.textContent = "🚨 Remove Evil Twin Sim";
+      simBtn.style.background = "rgba(239,68,68,0.3)";
+      simBtn.style.borderColor = "#ef4444";
+    } else {
+      simBtn.textContent = "🚨 Simulate Evil Twin AP";
+      simBtn.style.background = "rgba(239,68,68,0.14)";
+      simBtn.style.borderColor = "rgba(239,68,68,0.35)";
+    }
+  }
 
   // 1. Hero Card
   if (iface && iface.state && iface.state.toLowerCase() === "connected"){
@@ -1761,9 +2201,9 @@ async function loadWifiAssessment(forceScan = false){
   const rssi = iface ? `${iface.rssi_dbm} dBm` : "—";
   const auth = iface ? `${iface.authentication}` : "—";
   const cipher = iface ? `${iface.cipher}` : "—";
-  state.currentWifiNetworks = data.networks_in_range || [];
-  const uniqueSsids = new Set(state.currentWifiNetworks.map(n => n.ssid || "(Hidden SSID)")).size;
-  const totalAps = state.currentWifiNetworks.length;
+  state.currentWifiNetworks = networks;
+  const uniqueSsids = new Set(networks.map(n => n.ssid || "(Hidden SSID)")).size;
+  const totalAps = networks.length;
 
   $("wifi-stats").innerHTML = [
     [sig, "signal level"],
@@ -1816,7 +2256,7 @@ async function loadWifiAssessment(forceScan = false){
   renderWifiFindings(allFindings);
 
   // 7. In-range Networks Table
-  renderWifiNetworksTable(data.networks_in_range || []);
+  renderWifiNetworksTable(networks);
 }
 
 function renderVpnOverlay(vpn){
@@ -2007,6 +2447,7 @@ function renderWifiNetworksTable(networks){
     let html = "";
     sortedGroups.forEach(([ssid, items], gIdx) => {
       const isConnected = items.some(n => n.connected);
+      const hasRogue = items.some(n => n.is_rogue);
       const connectedNet = items.find(n => n.connected) || null;
       const bestSignal = Math.max(...items.map(n => n.signal_percent));
       const bestNet = items.find(n => n.signal_percent === bestSignal) || items[0];
@@ -2017,12 +2458,14 @@ function renderWifiNetworksTable(networks){
       const chanSummary = channels.length > 0 ? `Ch ${channels.join(", ")}` : "—";
       const bandSummary = bands.join(" & ") || "2.4 GHz";
 
-      const cls = isConnected ? "active-net" : "";
+      let cls = isConnected ? "active-net" : "";
+      if (hasRogue) cls += (cls ? " " : "") + "rogue-ap-row";
       const activeLabel = isConnected ? ` <span class="sev-chip info" style="font-size:0.7rem;padding:1px 5px">CONNECTED</span>` : "";
+      const rogueLabel = hasRogue ? ` <span class="rogue-badge">🚨 ROGUE CLONE AP</span>` : "";
       const meshLabel = apCount > 1 
         ? `<span class="mesh-count-badge">${apCount} APs (Mesh)</span>`
         : "";
-      const badgeCls = bestNet.security_grade ? bestNet.security_grade.replace("+", "") : "B";
+      const badgeCls = hasRogue ? "F" : (bestNet.security_grade ? bestNet.security_grade.replace("+", "") : "B");
 
       let apCell = "";
       if (isConnected && connectedNet) {
@@ -2038,7 +2481,7 @@ function renderWifiNetworksTable(networks){
       }
 
       html += `<tr class="${cls}">
-        <td><b>${esc(ssid)}</b>${activeLabel}${meshLabel}</td>
+        <td><b>${esc(ssid)}</b>${activeLabel}${rogueLabel}${meshLabel}</td>
         <td>${apCell}</td>
         <td>${esc(bestNet.authentication)} / ${esc(bestNet.encryption)}</td>
         <td>${esc(bandSummary)} &middot; ${esc(chanSummary)}</td>
@@ -2050,12 +2493,12 @@ function renderWifiNetworksTable(networks){
             </div>
           </div>
         </td>
-        <td><span class="grade-badge ${badgeCls}">Grade ${esc(bestNet.security_grade)}</span></td>
+        <td><span class="grade-badge ${badgeCls}">Grade ${esc(hasRogue ? 'F' : bestNet.security_grade)}</span></td>
       </tr>`;
 
       // If multi-AP, render collapsible detail subrow
       if (apCount > 1) {
-        const sortedItems = [...items].sort((a,b) => (b.connected ? 1 : 0) - (a.connected ? 1 : 0) || b.signal_percent - a.signal_percent);
+        const sortedItems = [...items].sort((a,b) => (b.connected ? 1 : 0) - (a.connected ? 1 : 0) || (b.is_rogue ? 1 : 0) - (a.is_rogue ? 1 : 0) || b.signal_percent - a.signal_percent);
         html += `<tr id="wifi-subgroup-${gIdx}" class="mesh-subgroup-row" style="display:none">
           <td colspan="6" class="mesh-subgroup-cell">
             <div class="mesh-subgroup-header">
@@ -2069,14 +2512,22 @@ function renderWifiNetworksTable(networks){
             <div class="mesh-ap-grid">
               ${sortedItems.map(ap => {
                 const isApConn = ap.connected;
-                const cardCls = isApConn ? "mesh-ap-card is-connected" : "mesh-ap-card";
+                const isRogue = ap.is_rogue;
+                let cardCls = isApConn ? "mesh-ap-card is-connected" : "mesh-ap-card";
+                if (isRogue) cardCls += " rogue-ap-row";
                 const sigColor = ap.signal_percent >= 70 ? "var(--ok)" : ap.signal_percent >= 45 ? "var(--med)" : "var(--crit)";
+                const badgeText = isApConn 
+                  ? '<span class="mesh-ap-badge connected">● CONNECTED AP</span>' 
+                  : isRogue 
+                    ? '<span class="mesh-ap-badge" style="background:#dc2626;color:#fff;font-weight:700">🚨 ROGUE CLONE AP</span>'
+                    : '<span class="mesh-ap-badge neighbor">Neighbor AP</span>';
+                const warningNote = isRogue
+                  ? `<div style="color:#b91c1c;font-size:0.72rem;font-weight:600;margin-top:4px;grid-column:1/-1">⚠ Downgraded Security: ${esc(ap.authentication)} / ${esc(ap.encryption)} &middot; Potential MitM Honeypot</div>`
+                  : "";
                 return `<div class="${cardCls}">
                   <div class="mesh-ap-top">
                     <code class="mesh-bssid">${esc(ap.bssid)}</code>
-                    ${isApConn 
-                      ? '<span class="mesh-ap-badge connected">● CONNECTED AP</span>' 
-                      : '<span class="mesh-ap-badge neighbor">Neighbor AP</span>'}
+                    ${badgeText}
                   </div>
                   <div class="mesh-ap-bottom">
                     <div class="mesh-ap-spec">
@@ -2085,6 +2536,7 @@ function renderWifiNetworksTable(networks){
                     <div class="mesh-ap-signal" style="color:${sigColor}">
                       ${ap.signal_percent}% (${ap.rssi_dbm} dBm)
                     </div>
+                    ${warningNote}
                   </div>
                 </div>`;
               }).join("")}
@@ -2131,11 +2583,13 @@ function renderWifiNetworksTable(networks){
     }
 
     tbody.innerHTML = networks.map(n => {
-      const cls = n.connected ? "active-net" : "";
+      let cls = n.connected ? "active-net" : "";
+      if (n.is_rogue) cls += (cls ? " " : "") + "rogue-ap-row";
       const activeLabel = n.connected ? ` <span class="sev-chip info" style="font-size:0.7rem;padding:1px 5px">CONNECTED</span>` : "";
-      const badgeCls = n.security_grade ? n.security_grade.replace("+", "") : "B";
+      const rogueLabel = n.is_rogue ? ` <span class="rogue-badge">🚨 ROGUE CLONE AP</span>` : "";
+      const badgeCls = n.is_rogue ? "F" : (n.security_grade ? n.security_grade.replace("+", "") : "B");
       return `<tr class="${cls}">
-        <td><b>${esc(n.ssid)}</b>${activeLabel}</td>
+        <td><b>${esc(n.ssid)}</b>${activeLabel}${rogueLabel}</td>
         <td><code>${esc(n.bssid)}</code></td>
         <td>${esc(n.authentication)} / ${esc(n.encryption)}</td>
         <td>${esc(n.band)} &middot; Ch ${esc(n.channel)}</td>
@@ -2147,7 +2601,7 @@ function renderWifiNetworksTable(networks){
             </div>
           </div>
         </td>
-        <td><span class="grade-badge ${badgeCls}">Grade ${esc(n.security_grade)}</span></td>
+        <td><span class="grade-badge ${badgeCls}">Grade ${esc(n.is_rogue ? 'F' : (n.security_grade || 'B'))}</span></td>
       </tr>`;
     }).join("");
   }
@@ -2348,8 +2802,58 @@ async function init(){
     });
   }
 
-  // IPsec action button
+  // IPsec action buttons & mode toggles
   $("run").addEventListener("click", runAnalysis);
+  const btnSingle = $("btn-ipsec-single");
+  if (btnSingle) btnSingle.addEventListener("click", () => switchIpsecMode("single"));
+  const btnDiff = $("btn-ipsec-diff");
+  if (btnDiff) btnDiff.addEventListener("click", () => switchIpsecMode("diff"));
+  const btnRunDiff = $("run-diff");
+  if (btnRunDiff) btnRunDiff.addEventListener("click", runDiffAnalysis);
+  const selDiffA = $("diff-capture-a");
+  if (selDiffA) selDiffA.addEventListener("change", runDiffAnalysis);
+  const selDiffB = $("diff-capture-b");
+  if (selDiffB) selDiffB.addEventListener("change", runDiffAnalysis);
+
+  // Wi-Fi Evil Twin & Rogue AP controls
+  const btnInspectRogue = $("btn-inspect-rogue-ap");
+  if (btnInspectRogue) {
+    btnInspectRogue.addEventListener("click", () => {
+      const table = $("wifi-networks-table");
+      if (table) {
+        table.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => {
+          const rogueRow = table.querySelector(".rogue-ap-row");
+          if (rogueRow) {
+            const subtoggle = rogueRow.querySelector(".btn-ap-subtoggle");
+            if (subtoggle && !subtoggle.classList.contains("expanded")) {
+              subtoggle.click();
+            }
+            rogueRow.classList.remove("rogue-highlight-flash");
+            void rogueRow.offsetWidth;
+            rogueRow.classList.add("rogue-highlight-flash");
+          }
+        }, 350);
+      }
+    });
+  }
+  const btnDismissRogue = $("btn-dismiss-rogue-banner");
+  if (btnDismissRogue) {
+    btnDismissRogue.addEventListener("click", () => {
+      const b = $("wifi-evil-twin-banner");
+      if (b) b.style.display = "none";
+    });
+  }
+  const simEvilTwinBtn = $("wifi-simulate-evil-twin");
+  if (simEvilTwinBtn) {
+    simEvilTwinBtn.addEventListener("click", () => {
+      state.simulatedRogueApActive = !state.simulatedRogueApActive;
+      if (state.wifiAssessment) {
+        renderWifiDashboard(state.wifiAssessment);
+      }
+    });
+  }
+
   renderRibbon(null);
 
   // Remediation Playbook toolbar controls

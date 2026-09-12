@@ -19,10 +19,28 @@
     </div>
       <div class="controls" id="header-controls">
       <!-- Dynamic controls according to active tab -->
-      <div id="ipsec-controls" style="display:flex;gap:8px;align-items:center;">
-        <label for="capture" class="visually-hidden">Capture file</label>
-        <select id="capture"></select>
-        <button id="run">Assess capture</button>
+      <div id="ipsec-controls" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <div class="mode-toggle-group" role="group" aria-label="IPsec Analysis Mode">
+          <button type="button" id="btn-ipsec-single" class="mode-toggle-btn active">Single Assessment</button>
+          <button type="button" id="btn-ipsec-diff" class="mode-toggle-btn">⚖️ Compare / Diff Captures</button>
+        </div>
+        <div id="ipsec-single-controls" style="display:flex;gap:8px;align-items:center;">
+          <label for="capture" class="visually-hidden">Capture file</label>
+          <select id="capture"></select>
+          <button id="run">Assess capture</button>
+        </div>
+        <div id="ipsec-diff-controls" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span class="diff-select-group">
+            <label for="diff-capture-a" class="diff-label">Baseline (A):</label>
+            <select id="diff-capture-a" class="diff-select"></select>
+          </span>
+          <span class="diff-vs-arrow">&rarr;</span>
+          <span class="diff-select-group">
+            <label for="diff-capture-b" class="diff-label">Hardened (B):</label>
+            <select id="diff-capture-b" class="diff-select"></select>
+          </span>
+          <button id="run-diff" class="primary-btn" style="padding:7px 14px;font-size:0.85rem">Run Diff Comparison</button>
+        </div>
         <button id="ipsec-export-report" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer">📥 Export Dossier</button>
       </div>
       <div id="wifi-controls" style="display:none;gap:8px;align-items:center;">
@@ -49,6 +67,34 @@
 
   <!-- ==================== VIEW 1: LIVE WI-FI POSTURE ==================== -->
   <main id="view-wifi" class="tab-content active">
+
+    <!-- Evil Twin / Rogue AP Alert Banner -->
+    <div id="wifi-evil-twin-banner" class="evil-twin-alert-banner" style="display:none;" role="alert">
+      <div class="evil-twin-banner-main">
+        <div class="evil-twin-icon-box">
+          <span class="evil-twin-pulse-ring"></span>
+          <span class="evil-twin-icon">🚨</span>
+        </div>
+        <div class="evil-twin-text-block">
+          <div class="evil-twin-headline">
+            <span class="evil-twin-title">ROGUE AP / EVIL TWIN ATTACK DETECTED</span>
+            <span class="threat-level-badge">CRITICAL THREAT &middot; SPOOFED AP</span>
+          </div>
+          <div class="evil-twin-desc" id="evil-twin-desc">
+            An unauthorized rogue access point broadcasting the same SSID as a trusted network with downgraded or open security parameters was discovered within RF range.
+          </div>
+          <div class="evil-twin-pills" id="evil-twin-pills">
+            <!-- Populated dynamically: Target SSID, Rogue BSSID, Downgraded Auth, RSSI -->
+          </div>
+        </div>
+      </div>
+      <div class="evil-twin-banner-actions">
+        <button type="button" id="btn-inspect-rogue-ap" class="action-btn inspect-rogue-btn">
+          🔍 Inspect Rogue AP in Table
+        </button>
+        <button type="button" id="btn-dismiss-rogue-banner" class="ghost-mini" title="Dismiss Alert">&times;</button>
+      </div>
+    </div>
     
     <!-- Wi-Fi Hero Banner -->
     <section class="wifi-hero-card">
@@ -71,6 +117,7 @@
       <div class="wifi-hero-actions" style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
         <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <button id="wifi-scan-now" class="action-btn">Scan All Networks</button>
+          <button id="wifi-simulate-evil-twin" class="action-btn" style="background:rgba(239,68,68,0.14);color:var(--crit);border:1px solid rgba(239,68,68,0.35);font-weight:600">🚨 Simulate Evil Twin AP</button>
           <button id="wifi-export-report" class="action-btn" style="background:rgba(56,189,248,0.14);color:var(--accent);border:1px solid rgba(56,189,248,0.35);font-weight:600">📥 Export Audit Dossier</button>
         </div>
         <div class="wifi-time-sub" id="wifi-last-scan">Last scanned: just now</div>
@@ -231,115 +278,246 @@
   <!-- ==================== VIEW 2: IPSEC VPN PROTOCOL ANALYZER ==================== -->
   <main id="view-ipsec" class="tab-content">
 
-    <section class="ribbon-block">
-      <p class="ribbon-lede">
-        A passive sensor on a mirror port sees every byte of an IPsec deployment and
-        can read almost none of it. <strong>Everything left of the boundary is parsed
-        directly</strong> from cleartext headers. <strong>Everything right of it is
-        encrypted</strong> &mdash; including the ESP cipher suite itself, which is
-        negotiated inside IKE_AUTH and never appears in the clear. That side is
-        inferred from packet framing, never decrypted.
-      </p>
-      <div class="ribbon" id="ribbon"></div>
-      <div class="ribbon-legend">
-        <span><i class="swatch obs"></i> Parsed from the wire</span>
-        <span><i class="swatch inf"></i> Inferred without keys</span>
-      </div>
-    </section>
+    <!-- IPsec Single Capture Analysis Mode -->
+    <div id="ipsec-single-view">
+      <section class="ribbon-block">
+        <p class="ribbon-lede">
+          A passive sensor on a mirror port sees every byte of an IPsec deployment and
+          can read almost none of it. <strong>Everything left of the boundary is parsed
+          directly</strong> from cleartext headers. <strong>Everything right of it is
+          encrypted</strong> &mdash; including the ESP cipher suite itself, which is
+          negotiated inside IKE_AUTH and never appears in the clear. That side is
+          inferred from packet framing, never decrypted.
+        </p>
+        <div class="ribbon" id="ribbon"></div>
+        <div class="ribbon-legend">
+          <span><i class="swatch obs"></i> Parsed from the wire</span>
+          <span><i class="swatch inf"></i> Inferred without keys</span>
+        </div>
+      </section>
 
-    <div class="grid" style="margin-bottom:18px">
-      <section class="panel">
-        <h2>Cryptographic posture</h2>
-        <div class="sub" id="capmeta">Select a capture and run an assessment.</div>
-        <div class="scoreline">
-          <div class="dial">
-            <svg width="118" height="118" viewBox="0 0 118 118" role="img" aria-labelledby="dialtitle">
-              <title id="dialtitle">Posture score</title>
-              <circle cx="59" cy="59" r="49" fill="none" stroke="#dfe7ec" stroke-width="11"/>
-              <circle id="arc" cx="59" cy="59" r="49" fill="none" stroke="var(--ok)"
-                      stroke-width="11" stroke-linecap="butt"
-                      stroke-dasharray="0 999" transform="rotate(-90 59 59)"/>
-              <text id="dialnum" x="59" y="65" text-anchor="middle"
-                    font-family="IBM Plex Mono, monospace" font-size="26"
-                    font-weight="600" fill="#14212b">&mdash;</text>
-            </svg>
+      <div class="grid" style="margin-bottom:18px">
+        <section class="panel">
+          <h2>Cryptographic posture</h2>
+          <div class="sub" id="capmeta">Select a capture and run an assessment.</div>
+          <div class="scoreline">
+            <div class="dial">
+              <svg width="118" height="118" viewBox="0 0 118 118" role="img" aria-labelledby="dialtitle">
+                <title id="dialtitle">Posture score</title>
+                <circle cx="59" cy="59" r="49" fill="none" stroke="#dfe7ec" stroke-width="11"/>
+                <circle id="arc" cx="59" cy="59" r="49" fill="none" stroke="var(--ok)"
+                        stroke-width="11" stroke-linecap="butt"
+                        stroke-dasharray="0 999" transform="rotate(-90 59 59)"/>
+                <text id="dialnum" x="59" y="65" text-anchor="middle"
+                      font-family="IBM Plex Mono, monospace" font-size="26"
+                      font-weight="600" fill="#14212b">&mdash;</text>
+              </svg>
+            </div>
+            <div class="score-meta">
+              <div class="score-num" id="grade">Not assessed</div>
+              <div class="score-sub" id="gradesub">No capture analysed yet.</div>
+              <div class="sev-row" id="sevrow"></div>
+            </div>
           </div>
-          <div class="score-meta">
-            <div class="score-num" id="grade">Not assessed</div>
-            <div class="score-sub" id="gradesub">No capture analysed yet.</div>
-            <div class="sev-row" id="sevrow"></div>
+          <div class="statgrid" id="stats" style="margin-top:18px"></div>
+        </section>
+      </div>
+
+      <div class="grid cols-2" style="margin-bottom:18px">
+        <section class="panel">
+          <h2>IKE security associations <span class="domain-tag obs">observed</span></h2>
+          <div class="sub">Transform sets read from IKE_SA_INIT and Main/Aggressive Mode.</div>
+          <div id="sessions"><div class="empty">No sessions yet.</div></div>
+        </section>
+
+        <section class="panel">
+          <h2>ESP tunnels <span class="domain-tag inf">inferred</span></h2>
+          <div class="sub">Suite deduced from RFC 4303 framing. No payload is decrypted.</div>
+          <div id="flows"><div class="empty">No tunnels yet.</div></div>
+        </section>
+      </div>
+
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Findings</h2>
+        <div class="sub" id="findsub">Select a finding to see the evidence and the fix.</div>
+        <div id="findings"><div class="empty">No findings yet.</div></div>
+      </section>
+
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Post-quantum exposure <span class="domain-tag obs">observed</span></h2>
+        <div class="sub" id="pqsub">Links ranked by what an adversary recording traffic today could read later.</div>
+        <div id="mosca"></div>
+        <div id="pqlinks"><div class="empty">No links assessed yet.</div></div>
+      </section>
+
+      <section class="panel remediation-panel">
+        <div class="remediation-header">
+          <div>
+            <h2>Automated Hardening &amp; Remediation Playbooks <span class="domain-tag obs" id="remediation-count-tag">4 Vendors</span></h2>
+            <div class="sub">
+              Passive Defence Architecture: <strong>Detect &rarr; Assess &rarr; Generate Fix &rarr; Admin Review &rarr; Dry-Run Staging</strong>.<br>
+              Deterministic forward configurations paired with instant rollback playbooks. Live gateway configurations never mutate without explicit administrator sign-off.
+            </div>
           </div>
         </div>
-        <div class="statgrid" id="stats" style="margin-top:18px"></div>
+
+        <div class="plat-row" id="platforms" style="margin-top:14px"></div>
+
+        <div class="playbook-toolbar">
+          <div class="playbook-view-tabs">
+            <button id="btn-playbook-forward" class="playbook-tab active" type="button">Forward Hardening Playbook</button>
+            <button id="btn-playbook-rollback" class="playbook-tab" type="button">Rollback / Undo Playbook</button>
+          </div>
+          <div class="playbook-meta-chips">
+            <span id="playbook-syntax-badge" class="playbook-chip chip-ok">&#10004; Syntax Valid</span>
+            <span id="playbook-status-badge" class="playbook-chip chip-status">Status: DRAFTED</span>
+          </div>
+          <div class="playbook-actions">
+            <button id="btn-playbook-copy" class="ghost" type="button">&#128203; Copy</button>
+            <button id="btn-playbook-dryrun" class="ghost" type="button">&#9874; Dry-Run Validate</button>
+            <button id="btn-playbook-approve" class="solid-btn" type="button">&#9997; Approve Plan</button>
+          </div>
+        </div>
+
+        <div id="playbook-sim-box" class="playbook-sim-box" style="display:none">
+          <div class="sim-header">
+            <strong id="sim-title">Dry-Run Simulation Report</strong>
+            <button id="sim-close" class="ghost-mini" type="button">&times;</button>
+          </div>
+          <div id="sim-detail" class="sim-content"></div>
+        </div>
+
+        <pre id="remediation" class="playbook-pre">Run an assessment to generate a hardening plan.</pre>
       </section>
     </div>
 
-    <div class="grid cols-2" style="margin-bottom:18px">
-      <section class="panel">
-        <h2>IKE security associations <span class="domain-tag obs">observed</span></h2>
-        <div class="sub">Transform sets read from IKE_SA_INIT and Main/Aggressive Mode.</div>
-        <div id="sessions"><div class="empty">No sessions yet.</div></div>
-      </section>
-
-      <section class="panel">
-        <h2>ESP tunnels <span class="domain-tag inf">inferred</span></h2>
-        <div class="sub">Suite deduced from RFC 4303 framing. No payload is decrypted.</div>
-        <div id="flows"><div class="empty">No tunnels yet.</div></div>
-      </section>
-    </div>
-
-    <section class="panel" style="margin-bottom:18px">
-      <h2>Findings</h2>
-      <div class="sub" id="findsub">Select a finding to see the evidence and the fix.</div>
-      <div id="findings"><div class="empty">No findings yet.</div></div>
-    </section>
-
-    <section class="panel" style="margin-bottom:18px">
-      <h2>Post-quantum exposure <span class="domain-tag obs">observed</span></h2>
-      <div class="sub" id="pqsub">Links ranked by what an adversary recording traffic today could read later.</div>
-      <div id="mosca"></div>
-      <div id="pqlinks"><div class="empty">No links assessed yet.</div></div>
-    </section>
-
-    <section class="panel remediation-panel">
-      <div class="remediation-header">
-        <div>
-          <h2>Automated Hardening &amp; Remediation Playbooks <span class="domain-tag obs" id="remediation-count-tag">4 Vendors</span></h2>
-          <div class="sub">
-            Passive Defence Architecture: <strong>Detect &rarr; Assess &rarr; Generate Fix &rarr; Admin Review &rarr; Dry-Run Staging</strong>.<br>
-            Deterministic forward configurations paired with instant rollback playbooks. Live gateway configurations never mutate without explicit administrator sign-off.
+    <!-- Before vs. After Diff Mode View -->
+    <div id="ipsec-diff-view" style="display:none">
+      
+      <!-- Diff Hero Card: Score Delta & Posture Shift -->
+      <section class="panel diff-hero-panel" style="margin-bottom:18px">
+        <div class="diff-hero-header">
+          <div>
+            <h2>Before vs. After Differential Audit <span class="domain-tag obs">Comparative Security Posture</span></h2>
+            <div class="sub">Side-by-side assessment of security upgrades, score deltas, and vulnerability remediation.</div>
+          </div>
+          <div id="diff-delta-badge" class="diff-delta-badge positive">
+            <span class="diff-delta-arrow">&#9650;</span>
+            <span class="diff-delta-num" id="diff-delta-num">+0</span>
+            <span class="diff-delta-label">Pts Delta</span>
           </div>
         </div>
-      </div>
 
-      <div class="plat-row" id="platforms" style="margin-top:14px"></div>
+        <div class="diff-summary-grid">
+          <!-- Baseline A Card -->
+          <div class="diff-capture-card baseline" id="diff-card-a">
+            <div class="diff-card-pill baseline-pill">BASELINE CAPTURE (A)</div>
+            <div class="diff-capture-name" id="diff-name-a">&mdash;</div>
+            <div class="diff-score-row">
+              <div class="diff-big-score" id="diff-score-a">&mdash;</div>
+              <div class="diff-grade-box">
+                <div class="diff-grade-pill" id="diff-grade-a">Grade &mdash;</div>
+                <div class="diff-sev-summary" id="diff-sevs-a"></div>
+              </div>
+            </div>
+            <div class="diff-meta-list" id="diff-meta-a"></div>
+          </div>
 
-      <div class="playbook-toolbar">
-        <div class="playbook-view-tabs">
-          <button id="btn-playbook-forward" class="playbook-tab active" type="button">Forward Hardening Playbook</button>
-          <button id="btn-playbook-rollback" class="playbook-tab" type="button">Rollback / Undo Playbook</button>
-        </div>
-        <div class="playbook-meta-chips">
-          <span id="playbook-syntax-badge" class="playbook-chip chip-ok">&#10004; Syntax Valid</span>
-          <span id="playbook-status-badge" class="playbook-chip chip-status">Status: DRAFTED</span>
-        </div>
-        <div class="playbook-actions">
-          <button id="btn-playbook-copy" class="ghost" type="button">&#128203; Copy</button>
-          <button id="btn-playbook-dryrun" class="ghost" type="button">&#9874; Dry-Run Validate</button>
-          <button id="btn-playbook-approve" class="solid-btn" type="button">&#9997; Approve Plan</button>
-        </div>
-      </div>
+          <!-- Delta Arrow & Transformation Column -->
+          <div class="diff-transformation-col">
+            <div class="diff-arrow-circle">&rarr;</div>
+            <div class="diff-transform-verdict" id="diff-transform-verdict">Remediation Delta</div>
+            <div class="diff-stat-delta" id="diff-stat-delta">Select captures to compare</div>
+          </div>
 
-      <div id="playbook-sim-box" class="playbook-sim-box" style="display:none">
-        <div class="sim-header">
-          <strong id="sim-title">Dry-Run Simulation Report</strong>
-          <button id="sim-close" class="ghost-mini" type="button">&times;</button>
+          <!-- Hardened B Card -->
+          <div class="diff-capture-card hardened" id="diff-card-b">
+            <div class="diff-card-pill hardened-pill">REMEDIATED CAPTURE (B)</div>
+            <div class="diff-capture-name" id="diff-name-b">&mdash;</div>
+            <div class="diff-score-row">
+              <div class="diff-big-score" id="diff-score-b">&mdash;</div>
+              <div class="diff-grade-box">
+                <div class="diff-grade-pill" id="diff-grade-b">Grade &mdash;</div>
+                <div class="diff-sev-summary" id="diff-sevs-b"></div>
+              </div>
+            </div>
+            <div class="diff-meta-list" id="diff-meta-b"></div>
+          </div>
         </div>
-        <div id="sim-detail" class="sim-content"></div>
-      </div>
+      </section>
 
-      <pre id="remediation" class="playbook-pre">Run an assessment to generate a hardening plan.</pre>
-    </section>
+      <!-- Side-by-Side Wire Framing Ribbons -->
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Wire Framing Comparison</h2>
+        <div class="sub">Direct comparison of cleartext header bytes vs encrypted packet framing.</div>
+        <div class="diff-ribbons-container">
+          <div class="diff-ribbon-col">
+            <div class="diff-ribbon-title"><span class="baseline-dot">&#9679;</span> Baseline (A): <b id="diff-ribbon-title-a">&mdash;</b></div>
+            <div class="ribbon" id="diff-ribbon-a"></div>
+          </div>
+          <div class="diff-ribbon-col">
+            <div class="diff-ribbon-title"><span class="hardened-dot">&#9679;</span> Remediated (B): <b id="diff-ribbon-title-b">&mdash;</b></div>
+            <div class="ribbon" id="diff-ribbon-b"></div>
+          </div>
+        </div>
+        <div class="ribbon-legend" style="margin-top:10px">
+          <span><i class="swatch obs"></i> Parsed from the wire</span>
+          <span><i class="swatch inf"></i> Inferred without keys</span>
+        </div>
+      </section>
+
+      <!-- Cryptographic Suite Upgrade Matrix -->
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Cryptographic Suite Upgrade Matrix <span class="domain-tag obs">negotiated transforms</span></h2>
+        <div class="sub">Side-by-side transform evolution between baseline and hardened network traffic.</div>
+        <div class="table-responsive">
+          <table class="data-table diff-matrix-table" id="diff-matrix-table">
+            <thead>
+              <tr>
+                <th style="width:22%">Security Parameter</th>
+                <th style="width:33%">Baseline (A) Configuration</th>
+                <th style="width:33%">Remediated (B) Configuration</th>
+                <th style="width:12%;text-align:center">Evolution Status</th>
+              </tr>
+            </thead>
+            <tbody id="diff-matrix-tbody">
+              <tr><td colspan="4" class="empty">Select captures and run diff comparison.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Vulnerability Resolution & Risk Elimination -->
+      <section class="panel" style="margin-bottom:18px">
+        <h2>Vulnerability Resolution &amp; Remediation Impact</h2>
+        <div class="sub">Specific CVE-class weaknesses eliminated by transitioning from Capture A to Capture B.</div>
+        
+        <div class="diff-findings-grid">
+          <!-- Resolved Findings (in A but eliminated in B) -->
+          <div class="diff-finding-col">
+            <div class="diff-col-header resolved-header">
+              <span>&#10004; Resolved Findings (Eliminated in B)</span>
+              <span class="diff-count-badge resolved" id="diff-resolved-count">0</span>
+            </div>
+            <div id="diff-resolved-list" class="diff-findings-list">
+              <div class="empty">No resolved findings to display.</div>
+            </div>
+          </div>
+
+          <!-- Persisting / Remaining Findings in B -->
+          <div class="diff-finding-col">
+            <div class="diff-col-header persisting-header">
+              <span>&#9888; Persisting / Remaining In Hardened B</span>
+              <span class="diff-count-badge persisting" id="diff-persisting-count">0</span>
+            </div>
+            <div id="diff-persisting-list" class="diff-findings-list">
+              <div class="empty">No remaining findings in hardened capture.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
 
   </main>
 

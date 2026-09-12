@@ -35,6 +35,8 @@ class WifiNetwork:
     encryption: str  # "CCMP", "GCMP", "TKIP", "None"
     security_grade: str  # "A+", "A", "B", "D", "F"
     connected: bool = False
+    is_rogue: bool = False
+    rogue_reason: str = ""
     notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,6 +80,7 @@ class WifiAssessment:
     summary: str = ""
     dns_posture: dict[str, Any] = field(default_factory=dict)
     quantum_risk: str = "Standard Classical (ECC/RSA Handshake at Risk to CRQC)"
+    rogue_aps: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.counts:
@@ -98,4 +101,5 @@ class WifiAssessment:
             "summary": self.summary,
             "dns_posture": self.dns_posture,
             "quantum_risk": self.quantum_risk,
+            "rogue_aps": self.rogue_aps,
         }
