@@ -1,0 +1,7 @@
+{
+  "algorithm": "sha256",
+  "files": {
+    "rf.joblib": "16525a5d4e7769ffc36d64d2463a615a0fd9ef3699949448fcf9c5c23b95ad4f",
+    "cnn.npz": "3f32b5ea3212f6b77a979be90105678f914723354f79b9d3bbace0460a06f0b3"
+  }
+}
