@@ -52,21 +52,24 @@ def export(
 
     # Front-end assets, copied verbatim so the hosted page and the served page
     # are the same files rather than two copies that can drift apart.
-    for rel in ("index.html", os.path.join("css", "dashboard.css"),
-                os.path.join("js", "dashboard.js")):
-        src = os.path.join(STATIC_DIR, rel)
-        dst = os.path.join(out_dir, rel)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        shutil.copyfile(src, dst)
+    for root, dirs, files in os.walk(STATIC_DIR):
+        rel_root = os.path.relpath(root, STATIC_DIR)
+        for f in files:
+            src = os.path.join(root, f)
+            dst = os.path.join(out_dir, f) if rel_root == "." else os.path.join(out_dir, rel_root, f)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(src, dst)
 
     # Absolute /static/... paths work behind the API but break under a GitHub
-    # Pages project subpath, so they are rewritten to be relative.
-    index_path = os.path.join(out_dir, "index.html")
-    with open(index_path, encoding="utf-8") as fh:
-        html = fh.read()
-    html = html.replace('href="/static/', 'href="').replace('src="/static/', 'src="')
-    with open(index_path, "w", encoding="utf-8") as fh:
-        fh.write(html)
+    # Pages project subpath, so they are rewritten to be relative across all HTML pages.
+    for item in os.listdir(out_dir):
+        if item.endswith(".html"):
+            hpath = os.path.join(out_dir, item)
+            with open(hpath, "r", encoding="utf-8") as fh:
+                html = fh.read()
+            html = html.replace('/static/', '')
+            with open(hpath, "w", encoding="utf-8") as fh:
+                fh.write(html)
 
     captures = sorted(
         n for n in os.listdir(capture_dir)
