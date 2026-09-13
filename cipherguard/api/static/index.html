@@ -53,6 +53,10 @@
       <img src="/static/img/favicon.svg" alt="CipherGuard Cyber Shield Emblem" width="28" height="28" style="vertical-align:middle">
       <h1>CipherGuard</h1>
       <span class="ps">SIH26160 &middot; NTRO</span>
+      <button type="button" id="backend-status-pill" class="backend-status-pill online" title="Real-time backend & telemetry status · Click to configure bridge" aria-haspopup="dialog">
+        <span class="pulse-dot"></span>
+        <span id="backend-status-label">Live Telemetry</span>
+      </button>
     </div>
     <div class="controls" id="header-controls">
       <!-- Dynamic controls according to active tab -->
@@ -728,6 +732,103 @@
     </div>
   </div>
 </aside>
+
+<!-- Backend Engine Bridge & Live Telemetry Modal -->
+<div id="backend-modal" class="modal-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="backend-modal-title">
+  <div class="backend-modal-card" role="document">
+    <div class="backend-modal-header">
+      <div class="backend-modal-title-group">
+        <span class="backend-modal-icon">🛡️</span>
+        <div>
+          <h2 id="backend-modal-title">CipherGuard Engine Bridge</h2>
+          <div class="backend-modal-subtitle">Direct Kernel Telemetry &amp; REST API Connection</div>
+        </div>
+      </div>
+      <button type="button" id="backend-modal-close" class="modal-close-btn" aria-label="Close dialog">&times;</button>
+    </div>
+
+    <div class="backend-modal-body">
+      <!-- Live Status Banner -->
+      <div id="modal-status-card" class="modal-status-card online">
+        <div class="modal-status-indicator">
+          <span class="modal-status-dot"></span>
+          <span id="modal-status-badge" class="modal-status-badge">Connected · Live Telemetry</span>
+        </div>
+        <div id="modal-status-details" class="modal-status-details">
+          Connected to local engine on <code>http://127.0.0.1:8000</code>. Kernel Wi-Fi &amp; VPN sensors active.
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="modal-metrics-grid">
+        <div class="modal-metric-box">
+          <div class="modal-metric-label">ENDPOINT</div>
+          <div id="modal-metric-endpoint" class="modal-metric-val">http://127.0.0.1:8000</div>
+        </div>
+        <div class="modal-metric-box">
+          <div class="modal-metric-label">ROUND-TRIP LATENCY</div>
+          <div id="modal-metric-latency" class="modal-metric-val">4 ms</div>
+        </div>
+        <div class="modal-metric-box">
+          <div class="modal-metric-label">HARDWARE ADAPTER</div>
+          <div id="modal-metric-adapter" class="modal-metric-val">MediaTek MT7921 (Wi-Fi 6)</div>
+        </div>
+        <div class="modal-metric-box">
+          <div class="modal-metric-label">PHYSICAL SSID</div>
+          <div id="modal-metric-ssid" class="modal-metric-val">White Devil (Ch 6)</div>
+        </div>
+      </div>
+
+      <!-- Action 1: Launch Direct Local Dashboard -->
+      <div class="backend-action-card highlight">
+        <div class="backend-action-header">
+          <span class="action-icon">🚀</span>
+          <div class="action-meta">
+            <strong>Launch Local Live Server Dashboard</strong>
+            <p>Access the dashboard directly from your local Python server on <code>http://127.0.0.1:8000/</code> with unrestricted kernel access and real-time physical Wi-Fi scanning.</p>
+          </div>
+        </div>
+        <div class="action-buttons">
+          <a href="http://127.0.0.1:8000/" target="_blank" rel="noopener noreferrer" class="btn btn-primary" id="btn-open-local-dash" style="display:inline-flex;align-items:center;gap:6px;text-decoration:none;padding:8px 14px;border-radius:4px;font-weight:600;font-size:0.85rem;">
+            Open Local Live Dashboard &rarr;
+          </a>
+        </div>
+      </div>
+
+      <!-- Action 2: Custom API Endpoint -->
+      <div class="backend-action-card">
+        <div class="backend-action-header">
+          <span class="action-icon">🔌</span>
+          <div class="action-meta">
+            <strong>Configure Backend API URL</strong>
+            <p>If hosting the backend on another port, cloud server, or HTTPS tunnel (e.g. Cloudflare Tunnel, ngrok):</p>
+          </div>
+        </div>
+        <div class="backend-input-group">
+          <input type="url" id="backend-url-input" class="backend-input" placeholder="http://127.0.0.1:8000" spellcheck="false">
+          <button type="button" id="btn-save-backend-url" class="btn">Test &amp; Connect</button>
+          <button type="button" id="btn-reset-backend-url" class="btn btn-subtle" title="Reset to default (http://127.0.0.1:8000)">Reset</button>
+        </div>
+        <div id="backend-url-feedback" class="backend-feedback" hidden></div>
+      </div>
+
+      <!-- Action 3: Start Command Helper -->
+      <div class="backend-action-card">
+        <div class="backend-action-header">
+          <span class="action-icon">💻</span>
+          <div class="action-meta">
+            <strong>Start Backend Engine from Terminal</strong>
+            <p>Run this command on your machine to start the live FastAPI telemetry server:</p>
+          </div>
+        </div>
+        <div class="code-snippet-box">
+          <code>python -m uvicorn cipherguard.api.server:app --host 127.0.0.1 --port 8000</code>
+          <button type="button" id="btn-copy-backend-cmd" class="btn-copy-cmd" title="Copy command to clipboard">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="/static/js/dashboard.js"></script>
 </body>

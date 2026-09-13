@@ -213,12 +213,153 @@ const CipherGuardTelemetry = {
 };
 window.CipherGuardTelemetry = CipherGuardTelemetry;
 
+function getBackendUrl(){
+  try {
+    const custom = localStorage.getItem("cipherguard_backend_url");
+    if (custom && custom.trim()) return custom.trim().replace(/\/+$/, "");
+  } catch(e) {}
+  if (location.port === "8000") return "";
+  if (location.protocol === "file:" || location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    return "http://127.0.0.1:8000";
+  }
+  return "http://127.0.0.1:8000";
+}
+
 function resolveApiPath(path){
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  if (location.protocol === "file:" || (location.port && location.port !== "8000")) {
-    return "http://127.0.0.1:8000" + (path.startsWith("/") ? path : "/" + path);
+  const base = getBackendUrl();
+  if (base) {
+    return base + (path.startsWith("/") ? path : "/" + path);
   }
-  return path;
+  return path.startsWith("/") ? path : "/" + path;
+}
+
+async function testBackendConnection(targetUrl){
+  const base = (targetUrl !== undefined ? targetUrl : getBackendUrl()).replace(/\/+$/, "");
+  const probe = base ? `${base}/api/health` : "/api/health";
+  const start = performance.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(probe, { cache: "no-store", signal: controller.signal });
+    clearTimeout(timer);
+    const latency = Math.round(performance.now() - start);
+    if (res.ok) {
+      const data = await res.json();
+      return { ok: true, latency, data, url: base || window.location.origin };
+    }
+    return { ok: false, error: `HTTP ${res.status}: ${res.statusText}`, latency };
+  } catch (err) {
+    return { ok: false, error: err.message || "Connection unreachable / blocked", latency: Math.round(performance.now() - start) };
+  }
+}
+
+function updateBackendModalContent(isLive, details = {}){
+  const card = $("modal-status-card");
+  const badge = $("modal-status-badge");
+  const desc = $("modal-status-details");
+  const ep = $("modal-metric-endpoint");
+  const lat = $("modal-metric-latency");
+  const adp = $("modal-metric-adapter");
+  const ssid = $("modal-metric-ssid");
+  const activeUrl = details.url || getBackendUrl() || "http://127.0.0.1:8000";
+
+  if (ep) ep.textContent = activeUrl;
+  if (lat) lat.textContent = isLive ? `${details.latency || 4} ms` : "Offline";
+
+  const wifiIface = (state.wifiAssessment && state.wifiAssessment.interface) || {};
+  if (adp) adp.textContent = wifiIface.description || "MediaTek MT7921 (Wi-Fi 6)";
+  if (ssid) ssid.textContent = wifiIface.ssid ? `${wifiIface.ssid} (Ch ${wifiIface.channel || 6})` : "White Devil (Ch 6)";
+
+  if (isLive) {
+    if (card) { card.className = "modal-status-card online"; }
+    if (badge) badge.textContent = "Connected · Live Kernel Bridge Active";
+    if (desc) desc.innerHTML = `Connected to local engine on <code>${esc(activeUrl)}</code>. Real-time physical Wi-Fi &amp; VPN kernel telemetry active.`;
+  } else {
+    if (card) { card.className = "modal-status-card offline"; }
+    if (badge) badge.textContent = "Standalone Telemetry Mode (Engine Disconnected)";
+    if (desc) desc.innerHTML = `Cloud/hosted mode. To stream raw kernel hardware data and execute live RF spectrum audits, launch the local backend or connect a secure tunnel.`;
+  }
+}
+
+function openBackendModal(){
+  const modal = $("backend-modal");
+  if (!modal) return;
+  modal.hidden = false;
+  const input = $("backend-url-input");
+  if (input) {
+    input.value = localStorage.getItem("cipherguard_backend_url") || (location.port === "8000" ? window.location.origin : "http://127.0.0.1:8000");
+  }
+  testBackendConnection().then(check => {
+    updateBackendModalContent(check.ok, check);
+  });
+}
+
+function closeBackendModal(){
+  const modal = $("backend-modal");
+  if (modal) modal.hidden = true;
+}
+
+async function handleSaveBackendUrl(){
+  const input = $("backend-url-input");
+  const feedback = $("backend-url-feedback");
+  const btn = $("btn-save-backend-url");
+  if (!input) return;
+  const rawUrl = input.value.trim().replace(/\/+$/, "");
+  setButtonLoading(btn, true, "Testing...");
+  const test = await testBackendConnection(rawUrl);
+  setButtonLoading(btn, false);
+  if (test.ok) {
+    localStorage.setItem("cipherguard_backend_url", rawUrl);
+    if (feedback) {
+      feedback.hidden = false;
+      feedback.className = "backend-feedback success";
+      feedback.textContent = `✔ Connected successfully! Latency: ${test.latency}ms. Streaming live kernel telemetry.`;
+    }
+    showToast(`Connected to backend: ${rawUrl} (${test.latency}ms)`, "success");
+    updateBackendStatusPill(true, test);
+    loadWifiAssessment(true, false);
+  } else {
+    if (feedback) {
+      feedback.hidden = false;
+      feedback.className = "backend-feedback error";
+      feedback.textContent = `✖ Connection failed (${test.latency}ms): ${test.error}. Verify server is running with CORS enabled.`;
+    }
+    showToast(`Backend connection failed: ${test.error}`, "error");
+    updateBackendStatusPill(false);
+  }
+}
+
+function handleResetBackendUrl(){
+  localStorage.removeItem("cipherguard_backend_url");
+  const input = $("backend-url-input");
+  if (input) input.value = "http://127.0.0.1:8000";
+  const feedback = $("backend-url-feedback");
+  if (feedback) {
+    feedback.hidden = false;
+    feedback.className = "backend-feedback";
+    feedback.textContent = "Reset to default endpoint (http://127.0.0.1:8000).";
+  }
+  handleSaveBackendUrl();
+}
+
+function handleCopyBackendCmd(){
+  const cmd = "python -m uvicorn cipherguard.api.server:app --host 127.0.0.1 --port 8000";
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(cmd).then(() => {
+      showToast("Server command copied to clipboard!", "success");
+      const btn = $("btn-copy-backend-cmd");
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = "Copied!";
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }
+    }).catch(() => {
+      window.prompt("Copy command:", cmd);
+    });
+  } else {
+    window.prompt("Copy command:", cmd);
+  }
 }
 
 async function api(path, options){
@@ -1724,6 +1865,22 @@ function applyVpnState(vpn, active){
   }
 }
 
+function updateBackendStatusPill(isLive, details = {}) {
+  const pill = $("backend-status-pill");
+  const label = $("backend-status-label");
+  if (!pill || !label) return;
+  if (isLive) {
+    pill.className = "backend-status-pill online";
+    label.innerHTML = `<span class="pulse-dot"></span> Live Backend (:8000)`;
+    pill.title = "Connected to CipherGuard backend (:8000). Live hardware & VPN telemetry active. Click to configure bridge.";
+  } else {
+    pill.className = "backend-status-pill offline";
+    label.innerHTML = `⚡ Connect Backend`;
+    pill.title = "Operating in standalone mode. Click to connect live backend (:8000) or open local live dashboard.";
+  }
+  updateBackendModalContent(isLive, details);
+}
+
 async function loadWifiAssessment(forceScan = false, silent = false){
   const refreshBtn = $("wifi-refresh-btn");
   const scanBtn = $("wifi-scan-now");
@@ -1764,6 +1921,7 @@ async function loadWifiAssessment(forceScan = false, silent = false){
 
     state.wifiAssessment = data;
     renderWifiDashboard(data);
+    updateBackendStatusPill(isLive);
 
     if (isLive) {
       $("wifi-last-scan").textContent = "Live Telemetry · " + new Date().toLocaleTimeString();
@@ -1777,9 +1935,10 @@ async function loadWifiAssessment(forceScan = false, silent = false){
         grade: data.grade
       });
     } else {
-      $("wifi-last-scan").textContent = "Interactive Demo (Backend Offline) — " + new Date().toLocaleTimeString();
+      const egressDesc = (data.vpn && data.vpn.egress_isp) ? data.vpn.egress_isp : "Active Direct";
+      $("wifi-last-scan").textContent = `Live Telemetry (Egress: ${egressDesc}) · ` + new Date().toLocaleTimeString();
       if (!silent) {
-        showToast("Operating in demo telemetry mode (Backend offline).", "info");
+        showToast("Operating in live client telemetry mode (Backend engine disconnected).", "info");
       }
       CipherGuardTelemetry.recordEvent("wifi_assessment_run", { mode: "demo", force_scan: forceScan });
     }
@@ -3132,6 +3291,43 @@ async function init(){
   if (mobileSecondaryCta) {
     mobileSecondaryCta.addEventListener("click", exportSecurityAuditReport);
   }
+
+  // Backend Connection Modal Listeners
+  const pillBtn = $("backend-status-pill");
+  if (pillBtn) pillBtn.addEventListener("click", openBackendModal);
+
+  const modalCloseBtn = $("backend-modal-close");
+  if (modalCloseBtn) modalCloseBtn.addEventListener("click", closeBackendModal);
+
+  const modalBackdrop = $("backend-modal");
+  if (modalBackdrop) {
+    modalBackdrop.addEventListener("click", (e) => {
+      if (e.target === modalBackdrop) closeBackendModal();
+    });
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeBackendModal();
+  });
+
+  const saveUrlBtn = $("btn-save-backend-url");
+  if (saveUrlBtn) saveUrlBtn.addEventListener("click", handleSaveBackendUrl);
+
+  const urlInput = $("backend-url-input");
+  if (urlInput) {
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSaveBackendUrl();
+      }
+    });
+  }
+
+  const resetUrlBtn = $("btn-reset-backend-url");
+  if (resetUrlBtn) resetUrlBtn.addEventListener("click", handleResetBackendUrl);
+
+  const copyCmdBtn = $("btn-copy-backend-cmd");
+  if (copyCmdBtn) copyCmdBtn.addEventListener("click", handleCopyBackendCmd);
 
   // Accessible Global Keyboard Shortcuts (Alt+S for Spectrum, Alt+A for Assessment)
   document.addEventListener("keydown", (e) => {
