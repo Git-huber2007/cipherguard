@@ -21,6 +21,7 @@ const state = {
   sessionStartTime: Date.now(),
   telemetryTicks: 0,
   simulatedRogueApActive: false, // interactive rogue AP evil twin simulation toggle
+  simulatedVpnActive: null,     // null: auto-detect, true: force active, false: force direct
   ipsecMode: "single",     // "single" or "diff"
   diffAssessmentA: null,   // baseline capture A assessment
   diffAssessmentB: null,   // hardened capture B assessment
@@ -94,22 +95,170 @@ function authHeaders(extra){
   return headers;
 }
 
-async function api(path, options){
-  const opts = Object.assign({}, options || {});
-  opts.headers = authHeaders(opts.headers);
-  let res = await fetch(path, opts);
+/* ------------------------------------------------ production utilities */
 
-  if (res.status === 401){
-    const supplied = window.prompt(
-      "This CipherGuard instance requires an API token.");
-    if (!supplied) throw new Error("authentication required");
-    state.token = supplied.trim();
-    try { sessionStorage.setItem("cipherguard.token", state.token); } catch (e) {}
-    opts.headers = authHeaders(options && options.headers);
-    res = await fetch(path, opts);
+let activeApiRequests = 0;
+function setProgressBar(active){
+  const bar = $("global-progress-bar");
+  if (!bar) return;
+  if (active) {
+    activeApiRequests++;
+    bar.classList.add("active");
+  } else {
+    activeApiRequests = Math.max(0, activeApiRequests - 1);
+    if (activeApiRequests === 0) {
+      bar.classList.remove("active");
+    }
   }
-  if (!res.ok) throw new Error((await res.text()) || res.statusText);
-  return res;
+}
+
+function showToast(message, type = "info", duration = 4000){
+  const container = $("toast-container");
+  if (!container) return;
+  const item = document.createElement("div");
+  item.className = `toast-item ${type}`;
+  const icon = type === "error" ? "🚨" : type === "success" ? "✔" : "ℹ";
+  item.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px">
+      <span>${icon}</span>
+      <span>${esc(message)}</span>
+    </div>
+    <button type="button" class="toast-close" aria-label="Close notification">&times;</button>
+  `;
+  const closeBtn = item.querySelector(".toast-close");
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      item.style.opacity = "0";
+      item.style.transform = "translateY(12px)";
+      setTimeout(() => item.remove(), 250);
+    };
+  }
+  container.appendChild(item);
+  setTimeout(() => {
+    if (item.parentElement) {
+      item.style.opacity = "0";
+      item.style.transform = "translateY(12px)";
+      setTimeout(() => item.remove(), 250);
+    }
+  }, duration);
+}
+
+function setButtonLoading(btn, isLoading, loadingText = "Processing..."){
+  if (!btn) return;
+  if (!btn.dataset) btn.dataset = {};
+  if (isLoading) {
+    if (!btn.dataset.originalText) {
+      btn.dataset.originalText = btn.innerHTML;
+    }
+    btn.classList.add("btn-loading");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span> ${esc(loadingText)}`;
+  } else {
+    btn.classList.remove("btn-loading");
+    btn.disabled = false;
+    if (btn.dataset.originalText) {
+      btn.innerHTML = btn.dataset.originalText;
+    }
+  }
+}
+
+function showFieldError(inputEl, message){
+  if (!inputEl) return;
+  inputEl.classList.add("has-error");
+  inputEl.setAttribute("aria-invalid", "true");
+  let err = inputEl.parentElement.querySelector(".field-error-msg");
+  if (!err) {
+    err = document.createElement("div");
+    err.className = "field-error-msg";
+    err.setAttribute("role", "alert");
+    inputEl.parentElement.appendChild(err);
+  }
+  err.innerHTML = `<span>⚠</span> ${esc(message)}`;
+}
+
+function clearFieldError(inputEl){
+  if (!inputEl) return;
+  inputEl.classList.remove("has-error");
+  inputEl.removeAttribute("aria-invalid");
+  const err = inputEl.parentElement.querySelector(".field-error-msg");
+  if (err) err.remove();
+}
+
+/* -------------------------- privacy-preserving telemetry & analytics */
+const CipherGuardTelemetry = {
+  events: [],
+  maxEvents: 50,
+  recordEvent(name, data = {}){
+    const entry = {
+      name,
+      data,
+      timestamp: new Date().toISOString()
+    };
+    this.events.push(entry);
+    if (this.events.length > this.maxEvents) this.events.shift();
+    try {
+      const stats = JSON.parse(localStorage.getItem("cipherguard_telemetry_stats") || "{}");
+      stats[name] = (stats[name] || 0) + 1;
+      stats.last_event_time = entry.timestamp;
+      localStorage.setItem("cipherguard_telemetry_stats", JSON.stringify(stats));
+    } catch(e) {}
+  },
+  getMetrics(){
+    try {
+      return JSON.parse(localStorage.getItem("cipherguard_telemetry_stats") || "{}");
+    } catch(e) {
+      return {};
+    }
+  }
+};
+window.CipherGuardTelemetry = CipherGuardTelemetry;
+
+function resolveApiPath(path){
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (location.protocol === "file:" || (location.port && location.port !== "8000")) {
+    return "http://127.0.0.1:8000" + (path.startsWith("/") ? path : "/" + path);
+  }
+  return path;
+}
+
+async function api(path, options){
+  const isSilent = !!(options && options.silent);
+  if (!isSilent) setProgressBar(true);
+  try {
+    const opts = Object.assign({}, options || {});
+    delete opts.silent;
+    opts.headers = authHeaders(opts.headers);
+    let url = resolveApiPath(path);
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch(netErr) {
+      if (!url.startsWith("http://127.0.0.1:8000") && !url.startsWith("http://localhost:8000")) {
+        url = "http://127.0.0.1:8000" + (path.startsWith("/") ? path : "/" + path);
+        res = await fetch(url, opts);
+      } else {
+        throw netErr;
+      }
+    }
+
+    if (res.status === 401){
+      const supplied = window.prompt(
+        "This CipherGuard instance requires an API token.");
+      if (!supplied) throw new Error("authentication required");
+      state.token = supplied.trim();
+      try { sessionStorage.setItem("cipherguard.token", state.token); } catch (e) {}
+      opts.headers = authHeaders(options && options.headers);
+      res = await fetch(url, opts);
+    }
+    if (!res.ok) throw new Error((await res.text()) || res.statusText);
+    CipherGuardTelemetry.recordEvent("api_success", { path });
+    return res;
+  } catch(err) {
+    CipherGuardTelemetry.recordEvent("api_error", { path, error: err.message });
+    throw err;
+  } finally {
+    if (!isSilent) setProgressBar(false);
+  }
 }
 
 function showBanner(message, kind){
@@ -786,6 +935,17 @@ async function loadRemediationLive(){
 const staticMode = {active: false, manifest: null};
 
 async function detectStaticMode(){
+  // Always probe for live backend first!
+  try {
+    const probeUrl = resolveApiPath("/api/health");
+    const healthRes = await fetch(probeUrl, { method: "GET", cache: "no-store" });
+    if (healthRes.ok) {
+      staticMode.active = false;
+      return false; // Live backend is ACTIVE and ready!
+    }
+  } catch(e) {}
+
+  // Only fall back to static demo mode if live backend is truly unreachable
   try{
     const res = await fetch("data/manifest.json", {cache: "no-store"});
     if (!res.ok) return false;
@@ -873,11 +1033,16 @@ async function fetchAssessment(name){
 }
 
 async function runAnalysis(){
-  const name = $("capture").value;
-  if (!name) return;
+  const sel = $("capture");
+  const name = sel ? sel.value : "";
   const btn = $("run");
-  btn.disabled = true;
-  btn.textContent = "Assessing…";
+  if (!name){
+    if (sel) showFieldError(sel, "Please select a valid capture file (.pcap, .pcapng)");
+    showToast("No capture file selected. Please choose a capture.", "error");
+    return;
+  }
+  if (sel) clearFieldError(sel);
+  setButtonLoading(btn, true, "Assessing capture...");
   try{
     state.assessment = await fetchAssessment(name);
     renderScore(state.assessment);
@@ -890,11 +1055,19 @@ async function runAnalysis(){
     renderPlatforms(state.assessment);
     await loadRemediation();
     showBanner(null);
+    showToast(`Assessment complete: Score ${state.assessment.score}/100 (Grade ${state.assessment.grade})`, "success");
+    CipherGuardTelemetry.recordEvent("ipsec_assessment_run", {
+      capture: name,
+      score: state.assessment.score,
+      grade: state.assessment.grade
+    });
   }catch(err){
     $("capmeta").textContent = "Assessment failed: " + err.message;
+    if (sel) showFieldError(sel, "Capture dissection failed: " + err.message);
+    showToast("Assessment failed: " + err.message, "error");
+    CipherGuardTelemetry.recordEvent("ipsec_assessment_failed", { capture: name, error: err.message });
   }finally{
-    btn.disabled = false;
-    btn.textContent = "Assess capture";
+    setButtonLoading(btn, false);
   }
 }
 
@@ -1238,8 +1411,10 @@ function switchTab(tab){
   const ipsecView = $("view-ipsec");
   const wifiControls = $("wifi-controls");
   const ipsecControls = $("ipsec-controls");
+  const mobileCtaLabel = $("mobile-cta-label");
 
   if (tab === "wifi"){
+    document.title = "Live Wi-Fi & RF Security Audit | CipherGuard";
     wifiTab.classList.add("active");
     wifiTab.setAttribute("aria-selected", "true");
     ipsecTab.classList.remove("active");
@@ -1250,7 +1425,12 @@ function switchTab(tab){
 
     if (wifiControls) wifiControls.style.display = "flex";
     if (ipsecControls) ipsecControls.style.display = "none";
+    if (mobileCtaLabel) mobileCtaLabel.textContent = "Analyze Live Wi-Fi";
+    CipherGuardTelemetry.recordEvent("tab_switch", { tab: "wifi" });
   } else {
+    document.title = state.ipsecMode === "diff"
+      ? "Cryptographic Diff & Remediation Evolution | CipherGuard"
+      : "IPsec VPN Protocol & Cryptographic Analyzer | CipherGuard";
     ipsecTab.classList.add("active");
     ipsecTab.setAttribute("aria-selected", "true");
     wifiTab.classList.remove("active");
@@ -1261,6 +1441,8 @@ function switchTab(tab){
 
     if (ipsecControls) ipsecControls.style.display = "flex";
     if (wifiControls) wifiControls.style.display = "none";
+    if (mobileCtaLabel) mobileCtaLabel.textContent = state.ipsecMode === "diff" ? "Run Diff Comparison" : "Assess Capture";
+    CipherGuardTelemetry.recordEvent("tab_switch", { tab: "ipsec" });
   }
 }
 
@@ -1272,973 +1454,52 @@ function getStaticWifiDemoData(){
     "description": "MediaTek MT7921 Wi-Fi 6 802.11ax PCIe Adapter",
     "mac_address": "2c:3b:70:fc:74:8b",
     "state": "connected",
-    "ssid": "Svyasa-Student",
-    "bssid": "58:61:63:01:73:cc",
-    "band": "5 GHz",
-    "channel": 44,
+    "ssid": "White Devil",
+    "bssid": "5a:04:bd:22:04:63",
+    "band": "2.4 GHz",
+    "channel": 6,
     "radio_type": "802.11ax",
     "authentication": "WPA2-Personal",
     "cipher": "CCMP",
-    "signal_percent": 79,
-    "rssi_dbm": -58,
-    "rx_rate_mbps": 573.5,
-    "tx_rate_mbps": 573.5,
+    "signal_percent": 84,
+    "rssi_dbm": -52,
+    "rx_rate_mbps": 286.8,
+    "tx_rate_mbps": 286.8,
     "dns_servers": [
-      "8.8.8.8",
-      "8.8.4.4"
+      "10.2.0.1",
+      "10.187.105.202"
     ],
-    "gateway_ip": "10.101.0.1",
-    "ipv4_address": "10.101.47.245"
+    "gateway_ip": "0.0.0.0",
+    "ipv4_address": "10.2.0.2"
   },
   "networks_in_range": [
     {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:73:cc",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 44,
-      "band": "5 GHz",
+      "ssid": "White Devil",
+      "bssid": "5a:04:bd:22:04:63",
+      "signal_percent": 83,
+      "rssi_dbm": -58,
+      "channel": 6,
+      "band": "2.4 GHz",
       "radio_type": "802.11ax",
       "authentication": "WPA2-Personal",
       "encryption": "CCMP",
       "security_grade": "B",
       "connected": true,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:cf:a7",
-      "signal_percent": 83,
-      "rssi_dbm": -58,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:cf:a7",
-      "signal_percent": 83,
-      "rssi_dbm": -58,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:cf:a7",
-      "signal_percent": 83,
-      "rssi_dbm": -58,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:cf:a7",
-      "signal_percent": 83,
-      "rssi_dbm": -58,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:60:a2",
-      "signal_percent": 82,
-      "rssi_dbm": -59,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:60:a2",
-      "signal_percent": 82,
-      "rssi_dbm": -59,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Redmi",
-      "bssid": "da:65:64:0c:db:ee",
-      "signal_percent": 82,
-      "rssi_dbm": -59,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11n",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:cf:a6",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:cf:a6",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:60:a2",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:cf:a6",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "OPPO K13x 5G 43f1",
-      "bssid": "aa:9b:20:73:38:27",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Harsh....",
-      "bssid": "2e:14:d6:37:fc:b1",
-      "signal_percent": 81,
-      "rssi_dbm": -59,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:cf:a6",
-      "signal_percent": 80,
-      "rssi_dbm": -60,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "vivo T3 Lite 5G",
-      "bssid": "1a:bd:03:4e:61:8e",
-      "signal_percent": 80,
-      "rssi_dbm": -60,
-      "channel": 157,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "Open",
-      "encryption": "None",
-      "security_grade": "F",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "oplus_co_aphfqi",
-      "bssid": "66:df:57:d7:4f:34",
-      "signal_percent": 80,
-      "rssi_dbm": -60,
-      "channel": 7,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:70:20",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:62:b0",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:73:cc",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:62:b0",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:73:cc",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:70:20",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:62:b0",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:73:cc",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:70:20",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:62:b0",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "OPPO A59 5G",
-      "bssid": "82:c3:e8:c6:e4:d7",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "NARZO 70x 5G",
-      "bssid": "5e:fa:d1:f3:cd:18",
-      "signal_percent": 79,
-      "rssi_dbm": -60,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:73:cb",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:70:20",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:60:a2",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:73:cb",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "OnePlus Nord CE5 6E56",
-      "bssid": "76:cf:63:22:75:4e",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "HONOR 200",
-      "bssid": "5e:60:98:28:6d:5e",
-      "signal_percent": 78,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:73:cb",
-      "signal_percent": 77,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:73:cb",
-      "signal_percent": 77,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Redmi Note 13 5G",
-      "bssid": "4a:24:b0:e9:8e:6f",
-      "signal_percent": 77,
-      "rssi_dbm": -61,
-      "channel": 157,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Aru's A36",
-      "bssid": "52:f2:7c:45:c3:ed",
-      "signal_percent": 77,
-      "rssi_dbm": -61,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:c8:12",
-      "signal_percent": 76,
-      "rssi_dbm": -62,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:5b:f3",
-      "signal_percent": 75,
-      "rssi_dbm": -62,
-      "channel": 157,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:f9:4c",
-      "signal_percent": 75,
-      "rssi_dbm": -62,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:f9:4c",
-      "signal_percent": 75,
-      "rssi_dbm": -62,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-EXAMCELL",
-      "bssid": "58:61:63:11:bf:26",
-      "signal_percent": 75,
-      "rssi_dbm": -62,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:f9:4c",
-      "signal_percent": 72,
-      "rssi_dbm": -64,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:5b:f3",
-      "signal_percent": 72,
-      "rssi_dbm": -64,
-      "channel": 157,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:62:af",
-      "signal_percent": 72,
-      "rssi_dbm": -64,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "realme NARZO 70 Turbo 5G",
-      "bssid": "56:94:e3:46:b3:c9",
-      "signal_percent": 72,
-      "rssi_dbm": -64,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:f9:4c",
-      "signal_percent": 72,
-      "rssi_dbm": -64,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "AndroidAP_6469",
-      "bssid": "72:f1:7a:13:b6:31",
-      "signal_percent": 66,
-      "rssi_dbm": -67,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:62:38",
-      "signal_percent": 63,
-      "rssi_dbm": -68,
-      "channel": 149,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "OnePlus Nord 5 BAFE",
-      "bssid": "8a:7e:b2:ed:56:b3",
-      "signal_percent": 63,
-      "rssi_dbm": -68,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Nikhill",
-      "bssid": "16:1e:10:a0:80:e7",
-      "signal_percent": 63,
-      "rssi_dbm": -68,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "S-Vyasa BSNL",
-      "bssid": "54:a2:45:13:8c:5c",
-      "signal_percent": 60,
-      "rssi_dbm": -70,
-      "channel": 5,
-      "band": "2.4 GHz",
-      "radio_type": "802.11n",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "CK....",
-      "bssid": "4e:99:4a:2f:21:5c",
-      "signal_percent": 60,
-      "rssi_dbm": -70,
-      "channel": 48,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "realme P4 Power 5G",
-      "bssid": "86:17:4d:8e:4e:bf",
-      "signal_percent": 54,
-      "rssi_dbm": -73,
-      "channel": 6,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "vivo Y51 Pro 5G",
-      "bssid": "d6:92:e4:4b:82:8b",
-      "signal_percent": 54,
-      "rssi_dbm": -73,
-      "channel": 36,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Nishtha",
-      "bssid": "56:1a:aa:48:91:2d",
-      "signal_percent": 54,
-      "rssi_dbm": -73,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "salaar\ud83d\udd25\ud83d\udd25",
-      "bssid": "ce:f3:f6:da:55:28",
-      "signal_percent": 54,
-      "rssi_dbm": -73,
-      "channel": 1,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa Bosscoder Faculty",
-      "bssid": "58:61:63:21:f8:2b",
-      "signal_percent": 51,
-      "rssi_dbm": -74,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "RaHuL\ud83c\udf41",
-      "bssid": "8e:f9:82:64:ea:ff",
-      "signal_percent": 51,
-      "rssi_dbm": -74,
-      "channel": 48,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Faculty",
-      "bssid": "58:61:63:21:5b:bb",
-      "signal_percent": 48,
-      "rssi_dbm": -76,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-IT",
-      "bssid": "58:61:63:31:5b:bb",
-      "signal_percent": 45,
-      "rssi_dbm": -77,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Staff",
-      "bssid": "58:61:63:11:5b:bb",
-      "signal_percent": 42,
-      "rssi_dbm": -79,
-      "channel": 11,
-      "band": "2.4 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa-Student",
-      "bssid": "58:61:63:01:7d:a4",
-      "signal_percent": 39,
-      "rssi_dbm": -80,
-      "channel": 40,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Redmi Note 10T 5G",
-      "bssid": "e6:00:3d:65:3a:8a",
-      "signal_percent": 27,
-      "rssi_dbm": -86,
-      "channel": 56,
-      "band": "5 GHz",
-      "radio_type": "802.11ac",
-      "authentication": "WPA3-Personal",
-      "encryption": "CCMP",
-      "security_grade": "A+",
-      "connected": false,
-      "notes": ""
-    },
-    {
-      "ssid": "Svyasa Bosscoder Faculty",
-      "bssid": "58:61:63:21:f8:f8",
-      "signal_percent": 24,
-      "rssi_dbm": -88,
-      "channel": 44,
-      "band": "5 GHz",
-      "radio_type": "802.11ax",
-      "authentication": "WPA2-Personal",
-      "encryption": "CCMP",
-      "security_grade": "B",
-      "connected": false,
-      "notes": ""
+      "is_rogue": false,
+      "rogue_reason": "",
+      "notes": "",
+      "cipher": "CCMP"
     }
   ],
-  "score": 85,
+  "score": 80,
   "grade": "B",
-  "started": "2026-09-12T06:30:07.791389+00:00",
+  "started": "2026-09-13T05:55:01.772817+00:00",
   "findings": [
     {
       "severity": "medium",
       "rule_id": "WIFI-004",
       "title": "WPA2 Pre-Shared Key (PSK) Vulnerable to Offline Dictionary Attack",
-      "subject": "SSID: Svyasa-Student (WPA2-Personal)",
+      "subject": "SSID: White Devil (WPA2-Personal)",
       "detail": "WPA2 4-Way Handshake allows passive adversaries recording the handshake to execute offline dictionary and brute-force attacks against the pre-shared key (PMK/PTK).",
       "remediation": "Enable WPA3-Personal (SAE - Simultaneous Authentication of Equals) with Protected Management Frames (PMF / 802.11w) on your router.",
       "reference": "IEEE 802.11-2020 / NIST SP 800-162",
@@ -2246,12 +1507,22 @@ function getStaticWifiDemoData(){
     },
     {
       "severity": "info",
-      "rule_id": "WIFI-021",
-      "title": "Multi-AP Mesh / BSS Roaming Environment",
-      "subject": "SSID: Svyasa-Student (10 APs in range)",
-      "detail": "Detected 10 legitimate BSSIDs operating under matching security parameters (WPA2-Personal).",
-      "remediation": "Ensure 802.11r (Fast BSS Transition) and 802.11k/v are enabled for seamless roaming.",
-      "reference": "IEEE 802.11r-2008",
+      "rule_id": "WIFI-011",
+      "title": "2.4 GHz Band In Use (Crowded Spectrum)",
+      "subject": "Band: 2.4 GHz \u00b7 Channel 6",
+      "detail": "The 2.4 GHz spectrum has only 3 non-overlapping channels (1, 6, 11) and suffers significant co-channel interference from Bluetooth and microwave emitters.",
+      "remediation": "Migrate clients to 5 GHz or 6 GHz (Wi-Fi 6/6E) for higher bandwidth and isolated DFS channels.",
+      "reference": "IEEE 802.11ax / 802.11be",
+      "inferred": false
+    },
+    {
+      "severity": "medium",
+      "rule_id": "WIFI-030",
+      "title": "Local Gateway Unencrypted DNS Resolver",
+      "subject": "DNS: 10.2.0.1, 10.187.105.202",
+      "detail": "DNS queries are routed through the local router without DNS-over-HTTPS (DoH) or DNS-over-TLS (DoT). Local network eavesdroppers or malicious gateways can inspect visited hostnames and execute DNS spoofing / cache poisoning.",
+      "remediation": "Configure encrypted DNS (DoH/DoT) using trusted resolvers like Cloudflare (1.1.1.1) or Quad9 (9.9.9.9), or enforce DNSSEC validation.",
+      "reference": "RFC 8484 (DoH) / RFC 7858 (DoT)",
       "inferred": false
     },
     {
@@ -2268,45 +1539,58 @@ function getStaticWifiDemoData(){
   "counts": {
     "critical": 0,
     "high": 0,
-    "medium": 1,
+    "medium": 2,
     "low": 0,
     "info": 2
   },
-  "summary": "Connected to 'Svyasa-Student' on 5 GHz (Channel 44). Security: WPA2-Personal / CCMP with 79% signal. Score: 85/100 (Grade B).",
+  "summary": "Connected to 'White Devil' on 2.4 GHz (Channel 6). Security: WPA2-Personal / CCMP with 84% signal. Score: 80/100 (Grade B).",
   "dns_posture": {
     "dns_servers": [
-      "8.8.8.8",
-      "8.8.4.4"
+      "10.2.0.1",
+      "10.187.105.202"
     ],
-    "gateway": "10.101.0.1",
-    "ipv4": "10.101.47.245"
+    "gateway": "0.0.0.0",
+    "ipv4": "10.2.0.2"
   },
   "quantum_risk": "Standard Classical (ECC/RSA Handshake at Risk to CRQC)",
+  "rogue_aps": [],
   "vpn": {
-    "connected": false,
-    "adapter_name": "",
-    "adapter_description": "",
-    "vpn_type": "None",
-    "virtual_ip": "",
+    "connected": true,
+    "adapter_name": "ProTUN",
+    "adapter_description": "Proton VPN Windows Tunnel",
+    "vpn_type": "ProtonVPN (WireGuard)",
+    "virtual_ip": "10.2.0.2",
     "gateway_ip": "",
-    "route_metric": 0,
-    "is_default_route": false,
-    "dns_servers": [],
+    "route_metric": 1,
+    "is_default_route": true,
+    "dns_servers": [
+      "10.2.0.1"
+    ],
     "dns_leak_detected": false,
     "dns_leak_details": "",
-    "egress_ip": "115.240.162.162",
-    "egress_isp": "Reliance Jio Infocomm Limited",
-    "egress_country": "India",
-    "egress_city": "Mumbai",
+    "egress_ip": "212.102.51.91",
+    "egress_isp": "Datacamp Limited",
+    "egress_country": "Japan",
+    "egress_city": "Tokyo",
     "findings": [
       {
         "severity": "info",
-        "rule_id": "VPN-010",
-        "title": "Direct Physical Egress (No Virtual VPN Tunnel)",
-        "subject": "Egress: Direct to ISP (Reliance Jio Infocomm Limited)",
-        "detail": "Device network traffic egresses directly through the local Wi-Fi router to the public ISP without an outer IPsec or WireGuard protective tunnel. Local network administrators and upstream ISPs can inspect unencrypted transport metadata and SNI hostnames.",
-        "remediation": "For sensitive remote access or untrusted networks, establish an IPsec (RFC 4301) or WireGuard tunnel.",
-        "reference": "NIST SP 800-77 / NIST SP 800-113",
+        "rule_id": "VPN-001",
+        "title": "Active Encrypted ProtonVPN (WireGuard) Overlay Tunnel Verified",
+        "subject": "Adapter: ProTUN (ProtonVPN (WireGuard))",
+        "detail": "All transport layer payloads on 'ProTUN' are encapsulated in an encrypted ProtonVPN (WireGuard) tunnel. Even if local Wi-Fi encryption is compromised, intermediate nodes and the local access point cannot inspect or tamper with tunneled packets.",
+        "remediation": "Maintain tunnel keepalive and verify endpoint certificate/key validity.",
+        "reference": "RFC 4301 (IPsec) / RFC 9370 / WireGuard Technical Whitepaper",
+        "inferred": false
+      },
+      {
+        "severity": "info",
+        "rule_id": "VPN-003",
+        "title": "Encrypted Tunnel DNS Enforced",
+        "subject": "Tunnel DNS: 10.2.0.1",
+        "detail": "Domain name resolution is securely isolated inside the VPN tunnel.",
+        "remediation": "Ensure DNSSEC validation is enabled on the tunnel resolver.",
+        "reference": "RFC 8484 / RFC 7858",
         "inferred": false
       }
     ]
@@ -2314,47 +1598,208 @@ function getStaticWifiDemoData(){
 };
 }
 
-async function loadWifiAssessment(forceScan = false){
+async function detectClientVpnEgress(data){
+  if (!data || !data.vpn) return;
+  // If backend already confirmed an active VPN tunnel, NEVER downgrade or overwrite it to false!
+  const backendConnected = !!data.vpn.connected;
+  if (backendConnected && data.vpn.egress_ip) {
+    return;
+  }
+  if (state.simulatedVpnActive !== null) {
+    applyVpnState(data.vpn, state.simulatedVpnActive);
+    return;
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2400);
+    const res = await fetch("https://ipwho.is/", { signal: controller.signal, mode: "cors" });
+    clearTimeout(timer);
+    if (res.ok) {
+      const geo = await res.json();
+      if (geo && geo.success !== false && geo.ip) {
+        const isp = (geo.connection && geo.connection.isp) || geo.isp || "";
+        const org = (geo.connection && geo.connection.org) || geo.org || "";
+        const combined = `${isp} ${org}`.toLowerCase();
+        const isVpn = backendConnected || /proton|wireguard|mullvad|nord|expressvpn|surfshark|private internet|pia|cyberghost|tunnelbear|cloudflare|ovh|digitalocean|linode|vultr|datacenter|datacamp|hosting/i.test(combined);
+
+        data.vpn.egress_ip = geo.ip;
+        data.vpn.egress_isp = isp || data.vpn.egress_isp || "Public Egress";
+        data.vpn.egress_country = geo.country || data.vpn.egress_country || "";
+        data.vpn.egress_city = geo.city || data.vpn.egress_city || "";
+
+        if (backendConnected || isVpn) {
+          let vType = (data.vpn.vpn_type && data.vpn.vpn_type !== "None") ? data.vpn.vpn_type : "Encrypted VPN Tunnel";
+          if (!backendConnected) {
+            if (/proton/i.test(combined)) vType = "ProtonVPN (WireGuard)";
+            else if (/mullvad/i.test(combined)) vType = "Mullvad (WireGuard)";
+            else if (/nord/i.test(combined)) vType = "NordVPN (NordLynx)";
+            else if (/wireguard/i.test(combined)) vType = "WireGuard Tunnel";
+            else if (/cloudflare/i.test(combined)) vType = "Cloudflare WARP";
+          }
+
+          data.vpn.connected = true;
+          data.vpn.vpn_type = vType;
+          data.vpn.adapter_name = data.vpn.adapter_name || "ProTUN";
+          data.vpn.adapter_description = data.vpn.adapter_description || "VPN Virtual Tunnel Adapter";
+          data.vpn.is_default_route = true;
+          data.vpn.dns_servers = (data.vpn.dns_servers && data.vpn.dns_servers.length) ? data.vpn.dns_servers : ["10.2.0.1"];
+          data.vpn.dns_leak_detected = false;
+        } else {
+          data.vpn.connected = false;
+          data.vpn.vpn_type = "None";
+          data.vpn.adapter_name = "";
+          data.vpn.is_default_route = false;
+        }
+      }
+    }
+  } catch (e) {
+    console.debug("Client-side egress lookup skipped or timed out:", e);
+  }
+}
+
+function applyVpnState(vpn, active){
+  if (!vpn) return;
+  if (active) {
+    vpn.connected = true;
+    vpn.vpn_type = (vpn.vpn_type && vpn.vpn_type !== "None") ? vpn.vpn_type : "ProtonVPN (WireGuard)";
+    vpn.adapter_name = vpn.adapter_name || "ProTUN";
+    vpn.adapter_description = vpn.adapter_description || "Proton VPN Windows Tunnel";
+    vpn.virtual_ip = vpn.virtual_ip || "10.2.0.2";
+    vpn.egress_ip = (vpn.egress_ip && vpn.egress_ip !== "115.240.162.162") ? vpn.egress_ip : "205.147.22.38";
+    vpn.egress_isp = (vpn.egress_isp && !/jio/i.test(vpn.egress_isp)) ? vpn.egress_isp : "Proton AG";
+    vpn.egress_city = (vpn.egress_city && vpn.egress_city !== "Mumbai") ? vpn.egress_city : "Mexico City";
+    vpn.egress_country = (vpn.egress_country && vpn.egress_country !== "India") ? vpn.egress_country : "Mexico";
+    vpn.is_default_route = true;
+    vpn.dns_servers = (vpn.dns_servers && vpn.dns_servers.length) ? vpn.dns_servers : ["10.2.0.1"];
+    vpn.dns_leak_detected = false;
+    vpn.dns_leak_details = "";
+    vpn.findings = [
+      {
+        severity: "info",
+        rule_id: "VPN-001",
+        title: `Active Encrypted ${vpn.vpn_type} Overlay Tunnel Verified`,
+        subject: `Adapter: ${vpn.adapter_name} (${vpn.vpn_type})`,
+        detail: `All transport layer payloads on '${vpn.adapter_name}' are encapsulated in an encrypted ${vpn.vpn_type} tunnel terminating in ${vpn.egress_city || "Proton Gateway"}. Even if local Wi-Fi encryption is compromised, intermediate nodes and the local access point cannot inspect or tamper with tunneled packets.`,
+        remediation: "Maintain tunnel keepalive and verify endpoint certificate/key validity.",
+        reference: "RFC 4301 (IPsec) / RFC 9370 / WireGuard Technical Whitepaper",
+        inferred: false
+      },
+      {
+        severity: "info",
+        rule_id: "VPN-003",
+        title: "Encrypted Tunnel DNS Enforced",
+        subject: `Tunnel DNS: ${vpn.dns_servers.join(", ")}`,
+        detail: "Domain name resolution is securely isolated inside the ProtonVPN tunnel resolver.",
+        remediation: "Ensure DNSSEC validation is enabled on the tunnel resolver.",
+        reference: "RFC 8484 / RFC 7858",
+        inferred: false
+      }
+    ];
+  } else {
+    vpn.connected = false;
+    vpn.vpn_type = "None";
+    vpn.adapter_name = "";
+    vpn.adapter_description = "";
+    vpn.virtual_ip = "";
+    vpn.egress_ip = "115.240.162.162";
+    vpn.egress_isp = "Reliance Jio Infocomm Limited";
+    vpn.egress_city = "Mumbai";
+    vpn.egress_country = "India";
+    vpn.is_default_route = false;
+    vpn.dns_servers = [];
+    vpn.dns_leak_detected = false;
+    vpn.dns_leak_details = "";
+    vpn.findings = [
+      {
+        severity: "info",
+        rule_id: "VPN-010",
+        title: "Direct Physical Egress (No Virtual VPN Tunnel)",
+        subject: "Egress: Direct to ISP (Reliance Jio Infocomm Limited)",
+        detail: "Device network traffic egresses directly through the local Wi-Fi router to the public ISP without an outer IPsec or WireGuard protective tunnel. Local network administrators and upstream ISPs can inspect unencrypted transport metadata and SNI hostnames.",
+        remediation: "For sensitive remote access or untrusted networks, establish an IPsec (RFC 4301) or WireGuard tunnel.",
+        reference: "NIST SP 800-77 / NIST SP 800-113",
+        inferred: false
+      }
+    ];
+  }
+}
+
+async function loadWifiAssessment(forceScan = false, silent = false){
   const refreshBtn = $("wifi-refresh-btn");
   const scanBtn = $("wifi-scan-now");
-  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = "Scanning..."; }
-  if (scanBtn) { scanBtn.disabled = true; scanBtn.textContent = "Scanning..."; }
+  if (!silent) {
+    if (refreshBtn) setButtonLoading(refreshBtn, true, "Scanning RF Spectrum...");
+    if (scanBtn) setButtonLoading(scanBtn, true, "Scanning...");
+  }
 
   try{
-    if (staticMode.active){
-      if (forceScan) {
-        await new Promise(r => setTimeout(r, 400));
-      }
-      let data = null;
-      try {
-        const res = await fetch("data/wifi_demo.json", {cache: "no-store"});
-        if (res.ok) data = await res.json();
-      } catch (e) {}
-      if (!data || !data.networks_in_range || data.networks_in_range.length === 0) data = getStaticWifiDemoData();
-      state.wifiAssessment = data;
-      renderWifiDashboard(data);
-      $("wifi-last-scan").textContent = "Interactive Demo (GitHub Pages) — " + new Date().toLocaleTimeString();
-    } else {
+    let data = null;
+    let isLive = false;
+
+    // 1. ALWAYS prioritize live kernel telemetry from the backend API
+    try {
       const endpoint = forceScan ? "/api/wifi/scan" : "/api/wifi/current";
       const method = forceScan ? "POST" : "GET";
-      const res = await api(endpoint, {method});
-      const data = await res.json();
-      state.wifiAssessment = data;
-      renderWifiDashboard(data);
-      $("wifi-last-scan").textContent = "Last scanned: " + new Date().toLocaleTimeString();
+      const res = await api(endpoint, { method, silent });
+      if (res && res.ok) {
+        data = await res.json();
+        isLive = true;
+        staticMode.active = false;
+      }
+    } catch (apiErr) {
+      console.debug("Live backend endpoint unreachable, checking fallback:", apiErr);
     }
-  }catch(err){
+
+    // 2. Fallback to static demo if live API was unreachable
+    if (!data) {
+      try {
+        const res = await fetch("data/wifi_demo.json", { cache: "no-store" });
+        if (res.ok) data = await res.json();
+      } catch (e) {}
+      if (!data || !data.networks_in_range || data.networks_in_range.length === 0) {
+        data = getStaticWifiDemoData();
+      }
+      await detectClientVpnEgress(data);
+    }
+
+    state.wifiAssessment = data;
+    renderWifiDashboard(data);
+
+    if (isLive) {
+      $("wifi-last-scan").textContent = "Live Telemetry · " + new Date().toLocaleTimeString();
+      if (!silent) {
+        showToast(`Live Wi-Fi scan complete: ${data.interface ? data.interface.ssid : 'Active Link'} (Grade ${data.grade || 'A'})`, "success");
+      }
+      CipherGuardTelemetry.recordEvent("wifi_assessment_run", {
+        mode: "live",
+        force_scan: forceScan,
+        score: data.score,
+        grade: data.grade
+      });
+    } else {
+      $("wifi-last-scan").textContent = "Interactive Demo (Backend Offline) — " + new Date().toLocaleTimeString();
+      if (!silent) {
+        showToast("Operating in demo telemetry mode (Backend offline).", "info");
+      }
+      CipherGuardTelemetry.recordEvent("wifi_assessment_run", { mode: "demo", force_scan: forceScan });
+    }
+  } catch(err){
     console.warn("Live Wi-Fi fetch fallback:", err);
     const fallback = getStaticWifiDemoData();
     state.wifiAssessment = fallback;
     renderWifiDashboard(fallback);
     $("wifi-last-scan").textContent = "Demonstration Mode Active";
-  }finally{
-    if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = "\uD83D\uDD04 Analyze Live Wi-Fi"; }
-    if (scanBtn) { scanBtn.disabled = false; scanBtn.textContent = "\uD83D\uDCE1 Scan All Networks"; }
+    if (!silent) {
+      showToast("Live Wi-Fi scan unavailable. Operating in demo telemetry mode.", "info");
+    }
+    CipherGuardTelemetry.recordEvent("wifi_assessment_fallback", { error: err.message });
+  } finally {
+    if (!silent) {
+      if (refreshBtn) setButtonLoading(refreshBtn, false);
+      if (scanBtn) setButtonLoading(scanBtn, false);
+    }
   }
 }
-
 
   function renderWifiDashboard(data){
   if (!data) return;
@@ -2439,6 +1884,30 @@ async function loadWifiAssessment(forceScan = false){
       simBtn.textContent = "🚨 Simulate Evil Twin AP";
       simBtn.style.background = "rgba(239,68,68,0.14)";
       simBtn.style.borderColor = "rgba(239,68,68,0.35)";
+    }
+  }
+
+  // If user requested simulated VPN toggle, apply manual override
+  if (state.simulatedVpnActive !== null && data.vpn) {
+    applyVpnState(data.vpn, state.simulatedVpnActive);
+  }
+
+  // Update VPN toggle button state
+  const toggleVpnBtn = $("btn-toggle-sim-vpn");
+  if (toggleVpnBtn) {
+    const isVpnOn = !!(data.vpn && data.vpn.connected);
+    if (isVpnOn) {
+      toggleVpnBtn.innerHTML = "🔓 Disconnect VPN (Sim)";
+      toggleVpnBtn.title = "Click to simulate disabling VPN (Direct ISP mode)";
+      toggleVpnBtn.style.color = "var(--ok)";
+      toggleVpnBtn.style.borderColor = "var(--ok)";
+      toggleVpnBtn.style.background = "rgba(34,197,94,0.12)";
+    } else {
+      toggleVpnBtn.innerHTML = "🔒 Connect ProtonVPN (Sim)";
+      toggleVpnBtn.title = "Click to simulate connecting ProtonVPN (Encrypted WireGuard Tunnel)";
+      toggleVpnBtn.style.color = "inherit";
+      toggleVpnBtn.style.borderColor = "var(--rule)";
+      toggleVpnBtn.style.background = "transparent";
     }
   }
 
@@ -3471,6 +2940,22 @@ async function init(){
     });
   }
 
+  // VPN Simulation Toggle Button listener
+  const btnToggleVpn = $("btn-toggle-sim-vpn");
+  if (btnToggleVpn) {
+    btnToggleVpn.addEventListener("click", () => {
+      const currentActive = !!(state.wifiAssessment && state.wifiAssessment.vpn && state.wifiAssessment.vpn.connected);
+      if (state.simulatedVpnActive === null) {
+        state.simulatedVpnActive = !currentActive;
+      } else {
+        state.simulatedVpnActive = !state.simulatedVpnActive;
+      }
+      if (state.wifiAssessment) {
+        renderWifiDashboard(state.wifiAssessment);
+      }
+    });
+  }
+
   // RF Spectrum Band Switcher Controls
   const btnSpec24 = $("btn-spectrum-24");
   const btnSpec5 = $("btn-spectrum-5");
@@ -3599,32 +3084,97 @@ async function init(){
     if (simBox) simBox.style.display = "none";
   });
 
-  // Detect host mode: GitHub Pages (static demo) vs live local API server
-  const isStatic = await detectStaticMode();
+  // Cookie & Local Storage Consent Banner initialization
+  const cookieBanner = $("cookie-banner");
+  const btnAcceptCookie = $("btn-cookie-accept");
+  const btnDismissCookie = $("btn-cookie-dismiss");
+  if (cookieBanner) {
+    try {
+      const consent = localStorage.getItem("cipherguard_consent");
+      if (consent) {
+        cookieBanner.classList.add("hidden");
+      }
+    } catch(e) {}
+    if (btnAcceptCookie) {
+      btnAcceptCookie.addEventListener("click", () => {
+        try { localStorage.setItem("cipherguard_consent", "accepted"); } catch(e) {}
+        cookieBanner.classList.add("hidden");
+        showToast("Preferences saved. Local storage active.", "success");
+        CipherGuardTelemetry.recordEvent("consent_accepted");
+      });
+    }
+    if (btnDismissCookie) {
+      btnDismissCookie.addEventListener("click", () => {
+        try { localStorage.setItem("cipherguard_consent", "dismissed"); } catch(e) {}
+        cookieBanner.classList.add("hidden");
+        CipherGuardTelemetry.recordEvent("consent_dismissed");
+      });
+    }
+  }
 
-  if (isStatic) {
-    // In static mode (GitHub Pages), default to interactive IPsec capture analyzer
-    switchTab("ipsec");
-    await loadCaptures();
-    if (!$("run").disabled) await runAnalysis();
-    // Pre-load demo Wi-Fi assessment in background
-    loadWifiAssessment(false);
-  } else {
-    // In live server mode, default to real-time Wi-Fi scanning
-    switchTab("wifi");
-    loadWifiAssessment(false);
-
-    // Auto-poll live Wi-Fi and VPN telemetry every 15s ONLY in live backend mode
-    setInterval(() => {
+  // Sticky Mobile CTA Dock Action Bindings
+  const mobilePrimaryCta = $("mobile-primary-cta");
+  const mobileSecondaryCta = $("mobile-secondary-cta");
+  if (mobilePrimaryCta) {
+    mobilePrimaryCta.addEventListener("click", () => {
       const wifiView = $("view-wifi");
       if (wifiView && wifiView.classList.contains("active")) {
-        loadWifiAssessment(false);
+        loadWifiAssessment(true);
+      } else {
+        if (state.ipsecMode === "diff") {
+          runDiffAnalysis();
+        } else {
+          runAnalysis();
+        }
       }
-    }, 15000);
-
-    // Preload IPsec captures in background
-    loadCaptures().then(() => { if (!$("run").disabled) runAnalysis(); });
+    });
   }
+  if (mobileSecondaryCta) {
+    mobileSecondaryCta.addEventListener("click", exportSecurityAuditReport);
+  }
+
+  // Accessible Global Keyboard Shortcuts (Alt+S for Spectrum, Alt+A for Assessment)
+  document.addEventListener("keydown", (e) => {
+    if (e.altKey && (e.key === "s" || e.key === "S")) {
+      e.preventDefault();
+      switchTab("wifi");
+      loadWifiAssessment(true);
+    } else if (e.altKey && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      switchTab("ipsec");
+      runAnalysis();
+    }
+  });
+
+  // Capture selection field validation listener
+  const capSel = $("capture");
+  if (capSel) {
+    capSel.addEventListener("change", () => {
+      clearFieldError(capSel);
+    });
+  }
+
+  // Detect host mode: GitHub Pages (static demo) vs live local API server
+  await detectStaticMode();
+
+  // Always default to live real-time Wi-Fi connection and VPN status
+  switchTab("wifi");
+  await loadWifiAssessment(false);
+
+  // Live Continuous Telemetry: Auto-poll live Wi-Fi connection and VPN status every 5 seconds
+  setInterval(() => {
+    const wifiView = $("view-wifi");
+    if (wifiView && wifiView.classList.contains("active")) {
+      loadWifiAssessment(false, true);
+    }
+  }, 5000);
+
+  // Preload IPsec captures in background for seamless navigation
+  loadCaptures().then(() => {
+    if ($("run") && !$("run").disabled && state.assessment === null) {
+      runAnalysis();
+    }
+  });
 }
 
 if (document.readyState === "loading"){

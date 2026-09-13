@@ -39,6 +39,10 @@ VPN_PATTERNS: list[tuple[str, str]] = [
     (r"vpn", "Generic VPN"),
 ]
 
+_GLOBAL_EGRESS_CACHE: dict[str, Any] = {}
+_GLOBAL_EGRESS_CACHE_TS: float = 0.0
+_LAST_VPN_CONNECTED: bool | None = None
+
 
 class VpnDetector:
     """Discovers active VPN tunnels, route redirects, DNS leaks, and egress changes."""
@@ -46,11 +50,10 @@ class VpnDetector:
     def __init__(self) -> None:
         self.is_windows = sys.platform.startswith("win")
         self.is_linux = sys.platform.startswith("linux")
-        self._cached_egress: dict[str, Any] = {}
-        self._cached_egress_ts: float = 0.0
 
     def detect_current(self, wifi_iface_name: str = "Wi-Fi", wifi_dns: list[str] | None = None) -> VpnTunnelInfo:
         """Analyze system routing, adapters, and egress to determine VPN status."""
+        global _LAST_VPN_CONNECTED, _GLOBAL_EGRESS_CACHE_TS
         if self.is_windows:
             info = self._detect_windows(wifi_iface_name, wifi_dns)
         elif self.is_linux:
@@ -58,11 +61,32 @@ class VpnDetector:
         else:
             info = VpnTunnelInfo()
 
+        # Invalidate egress cache immediately if the tunnel status transitioned (connect / disconnect)
+        if _LAST_VPN_CONNECTED is not None and _LAST_VPN_CONNECTED != info.connected:
+            _GLOBAL_EGRESS_CACHE_TS = 0.0
+        _LAST_VPN_CONNECTED = info.connected
+
         egress = self._get_egress_info()
         info.egress_ip = egress.get("ip", "")
         info.egress_isp = egress.get("isp", "")
         info.egress_country = egress.get("country", "")
         info.egress_city = egress.get("city", "")
+
+        # Heuristic fallback: If adapter inspection missed the tunnel but egress ISP is a confirmed VPN provider
+        if not info.connected and info.egress_isp:
+            isp_lower = info.egress_isp.lower()
+            if any(p in isp_lower for p in ["proton", "mullvad", "nord", "expressvpn", "surfshark", "wireguard", "private internet"]):
+                info.connected = True
+                if "proton" in isp_lower:
+                    info.vpn_type = "ProtonVPN (WireGuard)"
+                    info.adapter_name = info.adapter_name or "ProTUN"
+                elif "mullvad" in isp_lower:
+                    info.vpn_type = "Mullvad (WireGuard)"
+                elif "nord" in isp_lower:
+                    info.vpn_type = "NordVPN"
+                else:
+                    info.vpn_type = "Encrypted VPN Tunnel"
+                info.is_default_route = True
 
         self._assess_vpn_posture(info, wifi_dns)
         return info
@@ -380,16 +404,18 @@ class VpnDetector:
                 "city": "Private",
             }
 
+        global _GLOBAL_EGRESS_CACHE, _GLOBAL_EGRESS_CACHE_TS
         now = time.time()
-        if self._cached_egress and (now - self._cached_egress_ts < 15.0):
-            return self._cached_egress
+        if _GLOBAL_EGRESS_CACHE and (now - _GLOBAL_EGRESS_CACHE_TS < 30.0):
+            return _GLOBAL_EGRESS_CACHE
 
         info: dict[str, Any] = {}
-        # Try HTTPS encrypted endpoints first
-        for endpoint, is_ipapi in [
-            ("https://ipapi.co/json/", True),
-            ("https://api.ipify.org?format=json", False),
-            ("http://ip-api.com/json/?fields=status,query,isp,org,country,city", False),
+        # Prioritize fast, high-reliability HTTPS/HTTP endpoints
+        for endpoint, kind in [
+            ("https://ipwho.is/", "ipwho"),
+            ("http://ip-api.com/json/?fields=status,query,isp,org,country,city", "ipapi"),
+            ("https://api.ipify.org?format=json", "ipify"),
+            ("https://ipapi.co/json/", "ipapico"),
         ]:
             try:
                 req = urllib.request.Request(
@@ -398,7 +424,17 @@ class VpnDetector:
                 )
                 with urllib.request.urlopen(req, timeout=1.8) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
-                    if is_ipapi and data.get("ip"):
+                    if kind == "ipwho" and data.get("ip"):
+                        conn = data.get("connection") or {}
+                        isp = conn.get("isp") or conn.get("org") or data.get("isp", "Encrypted Tunnel Egress")
+                        info = {
+                            "ip": data.get("ip", ""),
+                            "isp": isp,
+                            "country": data.get("country", ""),
+                            "city": data.get("city", ""),
+                        }
+                        break
+                    elif kind == "ipapico" and data.get("ip"):
                         info = {
                             "ip": data.get("ip", ""),
                             "isp": data.get("org", "") or data.get("asn", "Encrypted Tunnel Egress"),
@@ -421,6 +457,8 @@ class VpnDetector:
                 continue
 
         if info:
-            self._cached_egress = info
-            self._cached_egress_ts = now
+            _GLOBAL_EGRESS_CACHE = info
+            _GLOBAL_EGRESS_CACHE_TS = now
+        elif _GLOBAL_EGRESS_CACHE:
+            return _GLOBAL_EGRESS_CACHE
         return info

@@ -84,10 +84,20 @@ def create_app(
 
     guard = [Depends(require_token)]
 
+    from fastapi.middleware.cors import CORSMiddleware
+
     app = FastAPI(
         title="CipherGuard",
         description="Passive IPsec VPN protocol analyzer and security assessment framework",
         version="1.0.0",
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     def _resolve(name: str) -> str:
@@ -124,6 +134,44 @@ def create_app(
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+    @app.get("/privacy", include_in_schema=False)
+    def privacy() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "privacy.html"))
+
+    @app.get("/terms", include_in_schema=False)
+    def terms() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "terms.html"))
+
+    @app.get("/thank-you", include_in_schema=False)
+    def thank_you() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "thank-you.html"))
+
+    @app.get("/404", include_in_schema=False)
+    def not_found_page() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "404.html"), status_code=404)
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots_txt() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "robots.txt"), media_type="text/plain")
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap_xml() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "sitemap.xml"), media_type="application/xml")
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon_ico() -> FileResponse:
+        return FileResponse(os.path.join(STATIC_DIR, "favicon.ico"), media_type="image/x-icon")
+
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    @app.exception_handler(StarletteHTTPException)
+    async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+        if exc.status_code == 404:
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept:
+                return FileResponse(os.path.join(STATIC_DIR, "404.html"), status_code=404)
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
     # -- api ---------------------------------------------------------------
 

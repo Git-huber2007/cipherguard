@@ -3,7 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CipherGuard — AI-Powered Protocol & Wi-Fi Security Analyzer</title>
+<title>CipherGuard — AI-Powered Protocol &amp; Live Wi-Fi Security Analyzer</title>
+<meta name="description" content="CipherGuard is an advanced AI-powered passive network protocol and Wi-Fi security assessment framework for deep cryptographic inspection, rogue AP detection, and compliance auditing.">
+<meta name="keywords" content="IPsec, Wi-Fi Security, Cryptographic Analysis, Rogue AP, Evil Twin, NIST SP 800-77, MITRE ATT&CK, Post-Quantum Cryptography, SIH26160, NTRO">
+<meta name="author" content="CipherGuard Protocol Analysis Group">
+<link rel="canonical" href="/">
+
+<!-- Open Graph / Social Media Cards -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="CipherGuard">
+<meta property="og:url" content="/">
+<meta property="og:title" content="CipherGuard — AI-Powered Protocol &amp; Live Wi-Fi Security Analyzer">
+<meta property="og:description" content="Passive IPsec protocol analyzer and live 802.11 wireless security assessment framework. Inspect wire framing and RF spectrum with zero payload retention.">
+<meta property="og:image" content="/static/img/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CipherGuard AI-Powered Protocol &amp; Wi-Fi Security Dashboard Overview">
+
+<!-- Twitter Card Tags -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CipherGuard — AI-Powered Protocol &amp; Live Wi-Fi Security Analyzer">
+<meta name="twitter:description" content="Passive IPsec protocol analyzer and live 802.11 wireless security assessment framework. Deep cryptographic inspection and rogue AP detection.">
+<meta name="twitter:image" content="/static/img/og-image.png">
+<meta name="twitter:image:alt" content="CipherGuard Platform Dashboard Preview">
+
+<!-- Favicon & PWA App Icons -->
+<link rel="icon" type="image/svg+xml" href="/static/img/favicon.svg">
+<link rel="alternate icon" href="/static/favicon.ico">
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+<link rel="manifest" href="/static/site.webmanifest">
+<meta name="theme-color" content="#1b6e8c">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -11,13 +41,20 @@
 </head>
 <body>
 
+<!-- Global Indeterminate Loading Progress Bar -->
+<div id="global-progress-bar" class="global-progress-bar" role="progressbar" aria-label="Loading telemetry" aria-valuemin="0" aria-valuemax="100"></div>
+
+<!-- Toast Notifications Container -->
+<div id="toast-container" class="toast-container" aria-live="polite"></div>
+
 <header class="masthead">
   <div class="masthead-in">
     <div class="brand">
+      <img src="/static/img/favicon.svg" alt="CipherGuard Cyber Shield Emblem" width="28" height="28" style="vertical-align:middle">
       <h1>CipherGuard</h1>
       <span class="ps">SIH26160 &middot; NTRO</span>
     </div>
-      <div class="controls" id="header-controls">
+    <div class="controls" id="header-controls">
       <!-- Dynamic controls according to active tab -->
       <div id="ipsec-controls" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <div class="mode-toggle-group" role="group" aria-label="IPsec Analysis Mode">
@@ -26,26 +63,32 @@
         </div>
         <div id="ipsec-single-controls" style="display:flex;gap:8px;align-items:center;">
           <label for="capture" class="visually-hidden">Capture file</label>
-          <select id="capture"></select>
-          <button id="run">Assess capture</button>
+          <select id="capture" aria-label="Select PCAP capture file"></select>
+          <!-- Prominent CTA Above the Fold for IPsec -->
+          <button id="run" class="hero-cta-btn">
+            <span class="cta-icon">⚡</span> Assess capture <span class="cta-badge">Alt + A</span>
+          </button>
         </div>
         <div id="ipsec-diff-controls" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;">
           <span class="diff-select-group">
             <label for="diff-capture-a" class="diff-label">Baseline (A):</label>
-            <select id="diff-capture-a" class="diff-select"></select>
+            <select id="diff-capture-a" class="diff-select" aria-label="Baseline capture A"></select>
           </span>
           <span class="diff-vs-arrow">&rarr;</span>
           <span class="diff-select-group">
             <label for="diff-capture-b" class="diff-label">Hardened (B):</label>
-            <select id="diff-capture-b" class="diff-select"></select>
+            <select id="diff-capture-b" class="diff-select" aria-label="Remediated capture B"></select>
           </span>
           <button id="run-diff" class="primary-btn" style="padding:7px 14px;font-size:0.85rem">Run Diff Comparison</button>
         </div>
-        <button id="ipsec-export-report" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer">📥 Export Dossier</button>
+        <button id="ipsec-export-report" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer" aria-label="Export IPsec security dossier">📥 Export Dossier</button>
       </div>
       <div id="wifi-controls" style="display:none;gap:8px;align-items:center;">
-        <button id="wifi-refresh-btn" class="primary-btn">Analyze Live Wi-Fi</button>
-        <button id="wifi-header-export-btn" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer">📥 Export Dossier</button>
+        <!-- Prominent CTA Above the Fold for Wi-Fi -->
+        <button id="wifi-refresh-btn" class="hero-cta-btn">
+          <span class="cta-icon">⚡</span> Analyze Live Wi-Fi <span class="cta-badge">Alt + S</span>
+        </button>
+        <button id="wifi-header-export-btn" class="action-btn secondary" style="padding:6px 12px;background:rgba(56,189,248,0.12);color:var(--accent);border:1px solid rgba(56,189,248,0.3);font-size:0.75rem;cursor:pointer" aria-label="Export Wi-Fi security dossier">📥 Export Dossier</button>
       </div>
     </div>
   </div>
@@ -132,7 +175,8 @@
         <div class="sub" id="wifi-score-sub">Live audit of local link encryption and key management.</div>
         <div class="scoreline">
           <div class="dial">
-            <svg width="118" height="118" viewBox="0 0 118 118" role="img">
+            <svg width="118" height="118" viewBox="0 0 118 118" role="img" aria-label="Wireless Cryptographic Posture Score Dial">
+              <title>Wireless Cryptographic Posture Score Dial</title>
               <circle cx="59" cy="59" r="49" fill="none" stroke="#dfe7ec" stroke-width="11"/>
               <circle id="wifi-arc" cx="59" cy="59" r="49" fill="none" stroke="var(--ok)"
                       stroke-width="11" stroke-linecap="butt"
@@ -195,8 +239,13 @@
           <h2>VPN Tunnel &amp; Transport Overlay Security <span class="domain-tag obs" id="vpn-badge">Direct ISP</span></h2>
           <div class="sub">Encrypted overlay status, route redirection, and DNS leak inspection.</div>
         </div>
-        <div id="vpn-status-indicator" class="vpn-status-badge vpn-status-inactive">
-          <span class="vpn-dot"></span> <span id="vpn-status-text">No VPN Active</span>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button id="btn-toggle-sim-vpn" type="button" class="ghost-mini" style="font-size:0.75rem;padding:4px 9px;border:1px solid var(--rule);border-radius:4px;cursor:pointer" title="Toggle VPN simulation between Encrypted Tunnel and Direct ISP">
+            🔒 Toggle VPN State
+          </button>
+          <div id="vpn-status-indicator" class="vpn-status-badge vpn-status-inactive">
+            <span class="vpn-dot"></span> <span id="vpn-status-text">No VPN Active</span>
+          </div>
         </div>
       </div>
       
@@ -592,13 +641,83 @@
 
   </main>
 
-  <footer>
-    Findings marked <em>inferred</em> come from statistical analysis of encrypted
-    traffic and carry a stated confidence. Wi-Fi audits reflect real-time live telemetry
-    from the host adapter. Capture of production traffic carries custody and retention obligations &mdash;
-    CipherGuard stores flow and RF metadata only, never payload.
+  <footer class="site-footer">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <h3>
+          <img src="/static/img/favicon.svg" alt="CipherGuard Shield Emblem" width="22" height="22" style="vertical-align:middle">
+          CipherGuard Security Framework
+        </h3>
+        <p class="footer-desc">
+          AI-powered passive IPsec protocol analyzer and live 802.11 wireless security assessment framework.
+          Inspects RFC 4303 framing and RF spectrum with zero payload decryption and zero external telemetry egress.
+        </p>
+        <div class="footer-org-badge">
+          <span>🏛️ NTRO &middot; Smart India Hackathon &middot; SIH26160</span>
+        </div>
+      </div>
+
+      <div class="footer-col">
+        <h4>Framework &amp; Legal</h4>
+        <ul class="footer-links">
+          <li><a href="/privacy">Privacy &amp; Custody Policy</a></li>
+          <li><a href="/terms">Terms of Engagement (RoE)</a></li>
+          <li><a href="/thank-you">Audit Confirmation Dossier</a></li>
+          <li><a href="/robots.txt">Robots.txt Directives</a></li>
+          <li><a href="/sitemap.xml">XML Site Map</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h4>Operations &amp; Security HQ</h4>
+        <address class="footer-address">
+          <strong>Cyber Defence &amp; Protocol Analysis Lab</strong><br>
+          Block-III, Technical Complex<br>
+          Old JNU Campus, New Delhi 110067<br>
+          <span style="display:inline-block;margin-top:6px;font-family:var(--mono);font-size:0.75rem">
+            PGP: 0x9F4B3C2A8D1E7F60<br>
+            <a href="mailto:security-disclosure@cipherguard.gov.in" style="color:var(--observed)">security-disclosure@cipherguard.gov.in</a>
+          </span>
+        </address>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="footer-custody-notice">
+        Findings marked <em>inferred</em> come from statistical analysis of RFC 4303 encrypted framing without keys. Wi-Fi audits reflect real-time live telemetry from host adapter.
+      </div>
+      <div style="font-family:var(--mono);font-size:0.75rem;color:var(--faint)">
+        &copy; 2026 CipherGuard &middot; Sovereign Cyber Defence
+      </div>
+    </div>
   </footer>
 </div>
+
+<!-- Sticky Mobile Quick Action Dock (Visible only on mobile screens <= 768px) -->
+<aside class="mobile-sticky-cta" id="mobile-sticky-cta" aria-label="Mobile Quick Actions">
+  <div class="mobile-sticky-cta-inner">
+    <button type="button" id="mobile-primary-cta" class="mobile-cta-main">
+      <span>⚡</span> <span id="mobile-cta-label">Analyze Live Wi-Fi</span>
+    </button>
+    <button type="button" id="mobile-secondary-cta" class="mobile-cta-sub" title="Export Security Dossier">
+      📥 Export
+    </button>
+  </div>
+</aside>
+
+<!-- Cookie & Local Storage Consent Banner -->
+<aside id="cookie-banner" class="cookie-banner" role="dialog" aria-label="Data Privacy &amp; Storage Notice">
+  <div class="cookie-banner-content">
+    <div class="cookie-text">
+      <strong>🔐 Local Storage &amp; Privacy Notice:</strong>
+      CipherGuard operates on strict zero-payload principles. We store assessment preferences, active capture filters, and local telemetry metrics in your browser’s local storage. We do not transmit tracking cookies to third parties. Review our <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Engagement</a>.
+    </div>
+    <div class="cookie-actions">
+      <button type="button" id="btn-cookie-accept" class="btn-cookie-accept">Accept &amp; Continue</button>
+      <button type="button" id="btn-cookie-dismiss" class="btn-cookie-dismiss">Dismiss</button>
+    </div>
+  </div>
+</aside>
 
 <script src="/static/js/dashboard.js"></script>
 </body>

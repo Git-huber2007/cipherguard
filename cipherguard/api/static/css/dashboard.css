@@ -2016,4 +2016,567 @@ footer{margin-top:34px;font-size:.79rem;color:var(--faint);max-width:74ch}
   border-left: 3px solid #10b981;
 }
 
+/* ==========================================================================
+   20-POINT PRODUCTION READINESS ENHANCEMENTS
+   ========================================================================== */
+
+/* ---------- 1. Global Progress Bar (Loading State) ---------- */
+.global-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  z-index: 99999;
+  background: transparent;
+  display: none;
+}
+.global-progress-bar.active {
+  display: block;
+  background: linear-gradient(90deg, #1b6e8c, #38bdf8, #10b981, #6d4e9c);
+  background-size: 250% 100%;
+  animation: progressAnim 1.4s infinite ease-in-out;
+}
+@keyframes progressAnim {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ---------- 2. Button Loading Spinners ---------- */
+.btn-loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.btn-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  border-top-color: #ffffff;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------- 3. Skeleton Loading Shimmers ---------- */
+.skeleton {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: 4px;
+  color: transparent !important;
+}
+.skeleton * {
+  visibility: hidden;
+}
+@keyframes skeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---------- 4. Form Error States & Shake Animation ---------- */
+.has-error {
+  border-color: var(--crit) !important;
+  box-shadow: 0 0 0 3px rgba(168, 30, 19, 0.22) !important;
+  animation: shake 0.35s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(3px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+.field-error-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--crit);
+  font-size: 0.75rem;
+  font-family: var(--mono);
+  font-weight: 500;
+  margin-top: 4px;
+  background: rgba(168, 30, 19, 0.08);
+  padding: 3px 8px;
+  border-radius: 3px;
+  border-left: 2px solid var(--crit);
+}
+
+/* ---------- 5. Toast Notifications ---------- */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 420px;
+  width: calc(100vw - 48px);
+}
+.toast-item {
+  pointer-events: auto;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 12px 18px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border-left: 4px solid var(--observed);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  animation: toastSlideIn 0.25s ease-out;
+  transition: opacity 0.25s, transform 0.25s;
+}
+.toast-item.error {
+  border-left-color: var(--crit);
+}
+.toast-item.success {
+  border-left-color: var(--ok);
+}
+.toast-item.info {
+  border-left-color: #38bdf8;
+}
+.toast-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.1rem;
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+.toast-close:hover {
+  color: #fff;
+}
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 6. Prominent CTA Above the Fold ---------- */
+.hero-cta-btn {
+  background: linear-gradient(135deg, #0f172a 0%, #1b6e8c 100%);
+  color: #ffffff;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(27, 110, 140, 0.28);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.hero-cta-btn:hover {
+  background: linear-gradient(135deg, #1e293b 0%, #0284c7 100%);
+  box-shadow: 0 6px 20px rgba(56, 189, 248, 0.4);
+  transform: translateY(-1px);
+}
+.hero-cta-btn:active {
+  transform: translateY(0);
+}
+.cta-badge {
+  background: rgba(255, 255, 255, 0.18);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- 7. Cookie & Local Storage Consent Banner ---------- */
+.cookie-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 99990;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(56, 189, 248, 0.25);
+  color: #f1f5f9;
+  padding: 16px 24px;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.3);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+.cookie-banner.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.cookie-banner-content {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.cookie-text {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+  max-width: 76ch;
+}
+.cookie-text strong {
+  color: #38bdf8;
+}
+.cookie-text a {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+.cookie-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.btn-cookie-accept {
+  background: #10b981;
+  color: #ffffff;
+  border: 1px solid #059669;
+  padding: 7px 16px;
+  border-radius: 4px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-cookie-accept:hover {
+  background: #059669;
+}
+.btn-cookie-dismiss {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #475569;
+  padding: 7px 14px;
+  border-radius: 4px;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.btn-cookie-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+/* ---------- 8. Sticky Mobile CTA Bar ---------- */
+.mobile-sticky-cta {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 99980;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 10px 16px;
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.25);
+}
+.mobile-sticky-cta-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 500px;
+  margin: 0 auto;
+}
+.mobile-cta-main {
+  flex: 1;
+  background: linear-gradient(135deg, #1b6e8c, #0284c7);
+  color: #fff;
+  border: none;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 2px 10px rgba(2, 132, 199, 0.4);
+}
+.mobile-cta-sub {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f1f5f9;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ---------- 9. Rich Footer & Organization Credentials ---------- */
+.site-footer {
+  margin-top: 48px;
+  border-top: 1px solid var(--rule);
+  padding-top: 32px;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 32px;
+  margin-bottom: 28px;
+}
+.footer-brand h3 {
+  font-size: 1.1rem;
+  color: var(--ink);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.footer-desc {
+  line-height: 1.6;
+  max-width: 48ch;
+  margin-bottom: 14px;
+}
+.footer-org-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: var(--ink);
+}
+.footer-col h4 {
+  font-size: 0.82rem;
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 0 0 12px 0;
+}
+.footer-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.footer-links a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.footer-links a:hover {
+  color: var(--observed);
+  text-decoration: underline;
+}
+.footer-address {
+  font-style: normal;
+  line-height: 1.55;
+  font-size: 0.82rem;
+}
+.footer-bottom {
+  border-top: 1px solid var(--rule);
+  padding-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.78rem;
+}
+.footer-custody-notice {
+  color: var(--faint);
+}
+
+/* ---------- 10. Responsive Mobile Breakpoints ---------- */
+
+/* Tablet Breakpoint (max-width: 1024px) */
+@media (max-width: 1024px) {
+  .wrap {
+    padding: 0 16px 80px;
+  }
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .footer-grid .footer-brand {
+    grid-column: span 2;
+  }
+}
+
+/* Mobile Landscape & Tablet Portrait (max-width: 768px) */
+@media (max-width: 768px) {
+  .masthead-in {
+    padding: 12px 16px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .masthead-in .brand {
+    justify-content: space-between;
+    width: 100%;
+  }
+  .controls {
+    width: 100%;
+    justify-content: stretch;
+  }
+  #ipsec-controls, #wifi-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  #ipsec-single-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  #ipsec-single-controls select {
+    width: 100%;
+    min-width: unset;
+  }
+  #ipsec-single-controls button, #run, #wifi-refresh-btn {
+    width: 100%;
+    min-height: 44px; /* Mobile touch target */
+  }
+  .mode-toggle-group {
+    width: 100%;
+    display: flex;
+  }
+  .mode-toggle-btn {
+    flex: 1;
+    text-align: center;
+  }
+  
+  /* Grids collapse to 1 column */
+  .grid.cols-2, .grid {
+    grid-template-columns: 1fr !important;
+  }
+  .vpn-detail-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .diff-heroes-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .diff-transformation-col {
+    padding: 16px 0;
+  }
+  .diff-ribbons-container {
+    grid-template-columns: 1fr !important;
+  }
+  .diff-findings-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Wi-Fi Hero Section on Mobile */
+  .wifi-hero-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+  .wifi-hero-actions {
+    align-items: stretch !important;
+  }
+  .wifi-hero-actions div {
+    flex-direction: column;
+  }
+  .wifi-hero-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  /* Tab Navigation touch sizing */
+  .nav-tabs {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .tab-btn {
+    width: 100%;
+    text-align: center;
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* Table responsiveness */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .data-table {
+    min-width: 600px;
+  }
+
+  /* Show Sticky Mobile CTA Dock */
+  .mobile-sticky-cta {
+    display: block;
+  }
+  .wrap {
+    padding-bottom: 120px; /* Leave space for mobile CTA dock */
+  }
+
+  /* Footer stack */
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .footer-grid .footer-brand {
+    grid-column: span 1;
+  }
+  .footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* Small Smartphone Breakpoint (max-width: 480px) */
+@media (max-width: 480px) {
+  body {
+    font-size: 14px;
+  }
+  .brand h1 {
+    font-size: 1.1rem;
+  }
+  .vpn-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .panel {
+    padding: 16px;
+  }
+  .scoreline {
+    flex-direction: column;
+    text-align: center;
+    gap: 14px;
+  }
+  .statgrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cookie-banner-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cookie-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+  .btn-cookie-accept, .btn-cookie-dismiss {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+
 
