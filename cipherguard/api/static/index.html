@@ -644,49 +644,59 @@
   <footer class="site-footer">
     <div class="footer-grid">
       <div class="footer-brand">
-        <h3>
-          <img src="/static/img/favicon.svg" alt="CipherGuard Shield Emblem" width="22" height="22" style="vertical-align:middle">
-          CipherGuard Security Framework
-        </h3>
+        <div class="footer-brand-header">
+          <img src="/static/img/favicon.svg" alt="CipherGuard Shield Emblem" width="28" height="28" class="footer-logo">
+          <div>
+            <h3 class="footer-title">CipherGuard Security Framework</h3>
+            <span class="footer-subtitle">Autonomous Protocol Dissector &bull; Wireless RF Auditor</span>
+          </div>
+        </div>
         <p class="footer-desc">
           AI-powered passive IPsec protocol analyzer and live 802.11 wireless security assessment framework.
           Inspects RFC 4303 framing and RF spectrum with zero payload decryption and zero external telemetry egress.
         </p>
         <div class="footer-org-badge">
-          <span>🏛️ NTRO &middot; Smart India Hackathon &middot; SIH26160</span>
+          <span class="badge-icon">🏛️</span>
+          <span>NTRO &middot; Smart India Hackathon &middot; SIH26160</span>
         </div>
       </div>
 
       <div class="footer-col">
-        <h4>Framework &amp; Legal</h4>
+        <h4>Architecture &amp; Legal</h4>
         <ul class="footer-links">
-          <li><a href="/privacy">Privacy &amp; Custody Policy</a></li>
-          <li><a href="/terms">Terms of Engagement (RoE)</a></li>
-          <li><a href="/thank-you">Audit Confirmation Dossier</a></li>
-          <li><a href="/robots.txt">Robots.txt Directives</a></li>
-          <li><a href="/sitemap.xml">XML Site Map</a></li>
+          <li><a href="/privacy"><span class="link-arrow">&rarr;</span> Privacy &amp; Custody Policy</a></li>
+          <li><a href="/terms"><span class="link-arrow">&rarr;</span> Terms of Engagement (RoE)</a></li>
+          <li><a href="/thank-you"><span class="link-arrow">&rarr;</span> Audit Confirmation Dossier</a></li>
+          <li><a href="/robots.txt"><span class="link-arrow">&rarr;</span> Robots.txt Directives</a></li>
+          <li><a href="/sitemap.xml"><span class="link-arrow">&rarr;</span> Machine-Readable Site Map</a></li>
         </ul>
       </div>
 
-      <div class="footer-col">
+      <div class="footer-col footer-col-hq">
         <h4>Operations &amp; Security HQ</h4>
-        <address class="footer-address">
-          <strong>Cyber Defence &amp; Protocol Analysis Lab</strong><br>
-          Block-III, Technical Complex<br>
-          Old JNU Campus, New Delhi 110067<br>
-          <span style="display:inline-block;margin-top:6px;font-family:var(--mono);font-size:0.75rem">
-            PGP: 0x9F4B3C2A8D1E7F60<br>
-            <a href="mailto:security-disclosure@cipherguard.gov.in" style="color:var(--observed)">security-disclosure@cipherguard.gov.in</a>
-          </span>
-        </address>
+        <div class="footer-card">
+          <div class="footer-lab-name">Cyber Defence &amp; Protocol Analysis Lab</div>
+          <div class="footer-lab-address">
+            Block-III, Technical Complex<br>
+            Old JNU Campus, New Delhi 110067, India
+          </div>
+          <div class="footer-pgp-box">
+            <span class="pgp-label">PGP KEY</span>
+            <code class="pgp-val">0x9F4B3C2A8D1E7F60</code>
+          </div>
+          <a href="mailto:security-disclosure@cipherguard.gov.in" class="footer-email-chip">
+            <span class="email-icon">✉</span>
+            <span class="email-text">security-disclosure@cipherguard.gov.in</span>
+          </a>
+        </div>
       </div>
     </div>
 
     <div class="footer-bottom">
       <div class="footer-custody-notice">
-        Findings marked <em>inferred</em> come from statistical analysis of RFC 4303 encrypted framing without keys. Wi-Fi audits reflect real-time live telemetry from host adapter.
+        <span class="status-dot"></span> Findings marked <em>inferred</em> come from statistical analysis of RFC 4303 encrypted framing without keys. Wi-Fi audits reflect real-time live telemetry from host adapter.
       </div>
-      <div style="font-family:var(--mono);font-size:0.75rem;color:var(--faint)">
+      <div class="footer-copy">
         &copy; 2026 CipherGuard &middot; Sovereign Cyber Defence
       </div>
     </div>
